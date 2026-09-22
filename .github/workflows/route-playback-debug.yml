@@ -15,6 +15,9 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: ''
       - name: Install project Android SDK packages
         run: sdkmanager 'platforms;android-32' 'build-tools;36.0.0' 'ndk;26.2.11394342'
       - name: Configure map build properties

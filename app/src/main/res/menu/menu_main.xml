@@ -12,4 +12,8 @@
         android:id="@+id/action_route"
         android:title="路线回放"
         app:showAsAction="never" />
+    <item
+        android:id="@+id/action_location_monitor"
+        android:title="定位监视器"
+        app:showAsAction="never" />
 </menu>

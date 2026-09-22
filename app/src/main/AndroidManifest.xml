@@ -114,6 +114,11 @@
             android:label="路线回放"
             android:exported="false" />
 
+        <activity
+            android:name=".LocationMonitorActivity"
+            android:label="定位监视器"
+            android:exported="false" />
+
     </application>
 
 </manifest>

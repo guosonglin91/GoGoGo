@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Location Monitor"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:paddingBottom="18dp" />
+
+        <TextView
+            android:id="@+id/monitor_provider"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Provider: -" />
+
+        <TextView
+            android:id="@+id/monitor_lat"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Latitude: -" />
+
+        <TextView
+            android:id="@+id/monitor_lon"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Longitude: -" />
+
+        <TextView
+            android:id="@+id/monitor_speed"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Speed: -" />
+
+        <TextView
+            android:id="@+id/monitor_bearing"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Bearing: -" />
+
+        <TextView
+            android:id="@+id/monitor_accuracy"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Accuracy: -" />
+
+        <TextView
+            android:id="@+id/monitor_mock"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="isMock: -" />
+
+        <TextView
+            android:id="@+id/monitor_time"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Location time: -" />
+
+        <TextView
+            android:id="@+id/monitor_elapsed"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Age: -"
+            android:paddingBottom="20dp" />
+
+        <Button
+            android:id="@+id/monitor_refresh"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="读取当前系统位置" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="18dp"
+            android:text="测试方法：保持本页打开或来回切换到影梭主界面，使用原有单点定位/摇杆改变位置，再观察本页经纬度与 isMock 是否变化。"
+            android:textSize="14sp" />
+
+    </LinearLayout>
+</ScrollView>

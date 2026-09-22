@@ -279,6 +279,12 @@ public class MainActivity extends BaseActivity implements SensorEventListener {
             startActivity(new Intent(this, RouteActivity.class));
             return true;
         }
+
+        if (item.getItemId() == R.id.action_location_monitor) {
+            startActivity(new Intent(this, LocationMonitorActivity.class));
+            return true;
+        }
+
         return super.onOptionsItemSelected(item);
     }
 

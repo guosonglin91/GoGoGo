@@ -12,10 +12,18 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:paddingBottom="18dp"
             android:text="Location Monitor"
             android:textSize="24sp"
-            android:textStyle="bold"
-            android:paddingBottom="18dp" />
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="8dp"
+            android:text="System Location"
+            android:textSize="18sp"
+            android:textStyle="bold" />
 
         <TextView
             android:id="@+id/monitor_provider"
@@ -69,8 +77,8 @@
             android:id="@+id/monitor_elapsed"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Age: -"
-            android:paddingBottom="20dp" />
+            android:paddingBottom="14dp"
+            android:text="Age: -" />
 
         <Button
             android:id="@+id/monitor_refresh"
@@ -81,8 +89,104 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingTop="18dp"
-            android:text="测试方法：保持本页打开或来回切换到影梭主界面，使用原有单点定位/摇杆改变位置，再观察本页经纬度与 isMock 是否变化。"
+            android:paddingBottom="8dp"
+            android:paddingTop="24dp"
+            android:text="Route Test Location"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/route_test_session"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Session: -" />
+
+        <TextView
+            android:id="@+id/route_test_state"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="State: no route session" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="10dp"
+            android:text="Source Location — WGS84"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/route_test_source_lat"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="WGS84 Latitude: -" />
+
+        <TextView
+            android:id="@+id/route_test_source_lon"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="WGS84 Longitude: -" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="10dp"
+            android:text="Display Location — BD09"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/route_test_display_lat"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="BD09 Latitude: -" />
+
+        <TextView
+            android:id="@+id/route_test_display_lon"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="BD09 Longitude: -" />
+
+        <TextView
+            android:id="@+id/route_test_target_speed"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="10dp"
+            android:text="Target Speed: -" />
+
+        <TextView
+            android:id="@+id/route_test_measured_speed"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Measured Speed: -" />
+
+        <TextView
+            android:id="@+id/route_test_bearing"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Bearing: -" />
+
+        <TextView
+            android:id="@+id/route_test_time"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Route time: -" />
+
+        <TextView
+            android:id="@+id/route_test_age"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Route age: -" />
+
+        <TextView
+            android:id="@+id/route_test_progress"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="18dp"
+            android:text="Progress: -" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="V2-B.1 诊断说明：Source Location 使用 WGS84；Display Location 使用百度地图 BD09。Target Speed 是输入目标值，Measured Speed 按相邻 WGS84 点与实际时间间隔计算。Route Test 仅存在于应用进程内，不调用 ServiceGo，也不写入 Android 系统 Mock Location。"
             android:textSize="14sp" />
 
     </LinearLayout>

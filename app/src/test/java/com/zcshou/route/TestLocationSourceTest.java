@@ -1,194 +1,110 @@
 package com.zcshou.route;
 
+import org.junit.After;
 import org.junit.Test;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 
 public class TestLocationSourceTest {
 
-    @Test
-    public void beginSession_createsReadySnapshotWithoutOldPosition() {
-        long first = TestLocationSource.beginSession(3.0);
+    @After
+    public void tearDown() {
+        TestLocationSource.clear();
+    }
 
-        assertTrue(TestLocationSource.publishPosition(
-                first,
-                43.1,
-                87.1,
-                43.2,
-                87.2,
-                3.0,
-                2.9,
-                45.0f,
-                1000L,
-                0,
-                10
-        ));
-
-        long second = TestLocationSource.beginSession(4.0);
-
-        TestLocationSource.Snapshot snapshot =
-                TestLocationSource.getLatest();
-
-        assertTrue(second > first);
-        assertEquals(
-                TestLocationSource.State.READY,
-                snapshot.state
-        );
-        assertFalse(snapshot.hasPosition);
-        assertEquals(4.0, snapshot.targetSpeedMps, 0.0);
+    private static RouteSnapshot snapshot(long sessionId, RouteSessionState state) {
+        return new RouteSnapshot.Builder(sessionId)
+                .state(state)
+                .latitudeWgs84(10.0)
+                .longitudeWgs84(20.0)
+                .altitudeMeters(55.0)
+                .targetSpeedMps(3.0)
+                .outputSpeedMps(state == RouteSessionState.PLAYING ? 3.0 : 0.0)
+                .bearingDeg(90.0)
+                .timestampMs(5000L)
+                .elapsedRealtimeNanos(5_000_000_000L)
+                .lapCount(0)
+                .distanceMeters(15.0)
+                .routeLengthMeters(100.0)
+                .progressFraction(0.15)
+                .segmentIndex(1)
+                .segmentCount(2)
+                .mode(ServiceLocationMode.ROUTE)
+                .build();
     }
 
     @Test
-    public void staleSession_cannotOverwriteCurrentSession() {
-        long oldSession =
-                TestLocationSource.beginSession(2.0);
+    public void publishSnapshotStoresCurrentSnapshot() {
+        RouteSnapshot snap = snapshot(1L, RouteSessionState.PLAYING);
+        assertTrue(TestLocationSource.publishSnapshot(snap));
 
-        long currentSession =
-                TestLocationSource.beginSession(3.0);
-
-        boolean accepted =
-                TestLocationSource.publishPosition(
-                        oldSession,
-                        1.0,
-                        2.0,
-                        3.0,
-                        4.0,
-                        2.0,
-                        2.0,
-                        90.0f,
-                        1000L,
-                        0,
-                        5
-                );
-
-        assertFalse(accepted);
-        assertEquals(
-                currentSession,
-                TestLocationSource.getLatest().sessionId
-        );
+        RouteSnapshot latest = TestLocationSource.getLatest();
+        assertNotNull(latest);
+        assertEquals(1L, latest.getSessionId());
+        assertEquals(10.0, latest.getLatitudeWgs84(), 1e-10);
     }
 
     @Test
-    public void publishPosition_storesCanonicalDisplayAndBothSpeeds() {
-        long session =
-                TestLocationSource.beginSession(3.0);
+    public void olderSessionCannotOverwriteNewerSession() {
+        RouteSnapshot current = snapshot(12L, RouteSessionState.PLAYING);
+        RouteSnapshot stale = snapshot(11L, RouteSessionState.PLAYING);
 
-        assertTrue(TestLocationSource.publishPosition(
-                session,
-                43.81900001,
-                87.56900001,
-                43.82500001,
-                87.57500001,
-                3.0,
-                2.95,
-                123.4f,
-                2000L,
-                7,
-                100
-        ));
-
-        TestLocationSource.Snapshot snapshot =
-                TestLocationSource.getLatest();
-
-        assertEquals(
-                TestLocationSource.State.PLAYING,
-                snapshot.state
-        );
-
-        assertTrue(snapshot.hasPosition);
-
-        assertEquals(
-                43.81900001,
-                snapshot.sourceLatitudeWgs84,
-                0.0
-        );
-
-        assertEquals(
-                87.56900001,
-                snapshot.sourceLongitudeWgs84,
-                0.0
-        );
-
-        assertEquals(
-                43.82500001,
-                snapshot.displayLatitudeBd09,
-                0.0
-        );
-
-        assertEquals(
-                87.57500001,
-                snapshot.displayLongitudeBd09,
-                0.0
-        );
-
-        assertEquals(
-                3.0,
-                snapshot.targetSpeedMps,
-                0.0
-        );
-
-        assertEquals(
-                2.95,
-                snapshot.measuredSpeedMps,
-                0.0
-        );
-
-        assertEquals(
-                123.4,
-                snapshot.bearingDeg,
-                0.0001
-        );
-
-        assertEquals(7, snapshot.index);
-        assertEquals(100, snapshot.total);
+        assertTrue(TestLocationSource.publishSnapshot(current));
+        assertFalse(TestLocationSource.publishSnapshot(stale));
+        assertEquals(12L, TestLocationSource.getLatest().getSessionId());
     }
 
     @Test
-    public void pause_preservesTargetSpeedButZerosMeasuredSpeed() {
-        long session =
-                TestLocationSource.beginSession(3.5);
+    public void sameSessionStateUpdatesAreAccepted() {
+        RouteSnapshot s1 = snapshot(1L, RouteSessionState.PLAYING);
+        RouteSnapshot s2 = new RouteSnapshot.Builder(1L)
+                .state(RouteSessionState.PAUSED)
+                .latitudeWgs84(10.0)
+                .longitudeWgs84(20.0)
+                .altitudeMeters(55.0)
+                .targetSpeedMps(3.0)
+                .outputSpeedMps(0.0)
+                .bearingDeg(90.0)
+                .timestampMs(6000L)
+                .elapsedRealtimeNanos(6_000_000_000L)
+                .lapCount(0)
+                .distanceMeters(15.0)
+                .routeLengthMeters(100.0)
+                .progressFraction(0.15)
+                .segmentIndex(1)
+                .segmentCount(2)
+                .mode(ServiceLocationMode.ROUTE_PAUSED)
+                .build();
 
-        TestLocationSource.publishPosition(
-                session,
-                43.1,
-                87.1,
-                43.2,
-                87.2,
-                3.5,
-                3.4,
-                20.0f,
-                3000L,
-                2,
-                10
-        );
+        assertTrue(TestLocationSource.publishSnapshot(s1));
+        assertTrue(TestLocationSource.publishSnapshot(s2));
+        assertEquals(RouteSessionState.PAUSED, TestLocationSource.getLatest().getState());
+    }
 
-        assertTrue(TestLocationSource.publishState(
-                session,
-                TestLocationSource.State.PAUSED
-        ));
+    @Test
+    public void clearRemovesSnapshot() {
+        assertTrue(TestLocationSource.publishSnapshot(snapshot(1L, RouteSessionState.PLAYING)));
+        TestLocationSource.clear();
+        assertNull(TestLocationSource.getLatest());
+    }
 
-        TestLocationSource.Snapshot snapshot =
-                TestLocationSource.getLatest();
+    @Test
+    public void listenerReceivesPublishedSnapshot() {
+        final RouteSnapshot[] captured = {null};
+        TestLocationSource.Listener listener = captured::setOnRouteTestLocationChanged;
+        TestLocationSource.addListener(listener);
 
-        assertEquals(
-                TestLocationSource.State.PAUSED,
-                snapshot.state
-        );
+        RouteSnapshot snap = snapshot(1L, RouteSessionState.PLAYING);
+        assertTrue(TestLocationSource.publishSnapshot(snap));
 
-        assertEquals(
-                3.5,
-                snapshot.targetSpeedMps,
-                0.0
-        );
+        assertNotNull(captured[0]);
+        assertEquals(1L, captured[0].getSessionId());
 
-        assertEquals(
-                0.0,
-                snapshot.measuredSpeedMps,
-                0.0
-        );
+        TestLocationSource.removeListener(listener);
+    }
 
-        assertTrue(snapshot.hasPosition);
+    @Test
+    public void nullSnapshotIsRejected() {
+        assertFalse(TestLocationSource.publishSnapshot(null));
     }
 }

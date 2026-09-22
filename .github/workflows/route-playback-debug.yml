@@ -31,7 +31,7 @@ jobs:
 
           with open('local.properties', 'w', encoding='utf-8') as properties:
               for key in ('MAPS_API_KEY', 'MAPS_SAFE_CODE'):
-                  properties.write(f'{key}={json.dumps(os.environ.get(key, ""))}\n')
+                  properties.write(f'{key}={json.dumps(os.environ.get(key) or "UNCONFIGURED")}\n')
           PY
       - name: Make Gradle wrapper executable
         run: chmod +x gradlew

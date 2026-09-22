@@ -8,4 +8,8 @@
         android:title=""
         app:actionViewClass="androidx.appcompat.widget.SearchView"
         app:showAsAction="always|collapseActionView" />
+    <item
+        android:id="@+id/action_route"
+        android:title="路线回放"
+        app:showAsAction="never" />
 </menu>

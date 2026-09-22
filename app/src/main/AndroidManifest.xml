@@ -109,6 +109,11 @@
             android:label="@string/app_history"
             android:exported="false" />
 
+        <activity
+            android:name=".RouteActivity"
+            android:label="路线回放"
+            android:exported="false" />
+
     </application>
 
 </manifest>

@@ -1,0 +1,36 @@
+name: Route Playback V1 Debug APK
+
+on:
+  push:
+    branches: [route-playback-v1]
+  workflow_dispatch:
+
+jobs:
+  assemble-debug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+      - name: Install project Android SDK packages
+        run: sdkmanager 'platforms;android-32' 'build-tools;36.0.0' 'ndk;26.2.11394342'
+      - name: Configure map build properties
+        env:
+          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+          MAPS_SAFE_CODE: ${{ secrets.MAPS_SAFE_CODE }}
+        run: |
+          printf 'MAPS_API_KEY=%s\nMAPS_SAFE_CODE=%s\n' "$MAPS_API_KEY" "$MAPS_SAFE_CODE" > local.properties
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
+      - name: Assemble Debug APK
+        run: ./gradlew assembleDebug
+      - name: Save Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: route-playback-v1-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

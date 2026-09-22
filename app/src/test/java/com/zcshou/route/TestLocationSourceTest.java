@@ -91,7 +91,7 @@ public class TestLocationSourceTest {
     @Test
     public void listenerReceivesPublishedSnapshot() {
         final RouteSnapshot[] captured = {null};
-        TestLocationSource.Listener listener = captured::setOnRouteTestLocationChanged;
+        TestLocationSource.Listener listener = snapshot -> captured[0] = snapshot;
         TestLocationSource.addListener(listener);
 
         RouteSnapshot snap = snapshot(1L, RouteSessionState.PLAYING);

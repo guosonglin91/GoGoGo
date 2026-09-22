@@ -31,6 +31,16 @@ import com.elvishew.xlog.XLog;
 import com.zcshou.gogogo.MainActivity;
 import com.zcshou.gogogo.R;
 import com.zcshou.joystick.JoyStick;
+import com.zcshou.route.LocationStateArbiter;
+import com.zcshou.route.RoutePlan;
+import com.zcshou.route.RoutePlaybackController;
+import com.zcshou.route.RouteSample;
+import com.zcshou.route.RouteSessionState;
+import com.zcshou.route.RouteSnapshot;
+import com.zcshou.route.RouteStartResult;
+import com.zcshou.route.ServiceLocationMode;
+import com.zcshou.route.ServiceLocationState;
+import com.zcshou.route.TestLocationSource;
 
 public class ServiceGo extends Service {
     // 定位相关变量
@@ -59,6 +69,16 @@ public class ServiceGo extends Service {
     // 摇杆相关
     private JoyStick mJoyStick;
 
+    // V2-C route-playback state
+    private final java.util.concurrent.atomic.AtomicLong mNextRouteSessionId = new java.util.concurrent.atomic.AtomicLong(0L);
+    private LocationStateArbiter mLocationArbiter;
+    private RoutePlaybackController mRouteController;
+
+    private volatile boolean mGpsProviderReady = false;
+    private volatile boolean mNetworkProviderReady = false;
+    private int mConsecutiveProviderFailureCycles = 0;
+    private static final int PROVIDER_FAILURE_THRESHOLD = 3;
+
     private final ServiceGoBinder mBinder = new ServiceGoBinder();
 
     @Override
@@ -78,6 +98,27 @@ public class ServiceGo extends Service {
         removeTestProviderGPS();
         addTestProviderGPS();
 
+        // Initialize V2-C arbitration with default manual state
+        mLocationArbiter = new LocationStateArbiter(
+                ServiceLocationState.manual(DEFAULT_LNG, DEFAULT_LAT, DEFAULT_ALT, mSpeed, DEFAULT_BEA)
+        );
+
+        // Initialize V2-C controller with Android clock
+        mRouteController = new RoutePlaybackController(
+                new RoutePlaybackController.Clock() {
+                    @Override
+                    public long elapsedRealtimeNanos() {
+                        return SystemClock.elapsedRealtimeNanos();
+                    }
+
+                    @Override
+                    public long currentTimeMillis() {
+                        return System.currentTimeMillis();
+                    }
+                },
+                sample -> onRouteSample(sample)
+        );
+
         initGoLocation();
 
         initNotification();
@@ -87,20 +128,35 @@ public class ServiceGo extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        mCurLng = intent.getDoubleExtra(MainActivity.LNG_MSG_ID, DEFAULT_LNG);
-        mCurLat = intent.getDoubleExtra(MainActivity.LAT_MSG_ID, DEFAULT_LAT);
-        mCurAlt = intent.getDoubleExtra(MainActivity.ALT_MSG_ID, DEFAULT_ALT);
+        // Only apply position extras if they are actually present
+        if (intent != null && intent.hasExtra(MainActivity.LNG_MSG_ID)) {
+            double lng = intent.getDoubleExtra(MainActivity.LNG_MSG_ID, DEFAULT_LNG);
+            double lat = intent.getDoubleExtra(MainActivity.LAT_MSG_ID, DEFAULT_LAT);
+            double alt = intent.getDoubleExtra(MainActivity.ALT_MSG_ID, DEFAULT_ALT);
 
-        mJoyStick.setCurrentPosition(mCurLng, mCurLat, mCurAlt);
+            mCurLng = lng;
+            mCurLat = lat;
+            mCurAlt = alt;
+
+            mJoyStick.setCurrentPosition(mCurLng, mCurLat, mCurAlt);
+        }
 
         return super.onStartCommand(intent, flags, startId);
     }
 
     @Override
     public void onDestroy() {
+        // Stop route controller before provider cleanup
+        if (mRouteController != null) {
+            mRouteController.shutdown();
+        }
+        TestLocationSource.clear();
+
         isStop = true;
         mLocHandler.removeMessages(HANDLER_MSG_ID);
-        mLocHandlerThread.quit();
+        if (mLocHandlerThread != null) {
+            mLocHandlerThread.quit();
+        }
 
         mJoyStick.destroy();
 
@@ -112,6 +168,178 @@ public class ServiceGo extends Service {
 
         super.onDestroy();
     }
+
+    // ---- V2-C Route Sample Listener ----
+
+    private void onRouteSample(RouteSample sample) {
+        // Accept sample into arbiter
+        boolean accepted = mLocationArbiter.acceptRouteSample(sample);
+        if (!accepted) return;
+
+        // Publish to diagnostic mirror
+        RouteSnapshot snap = RouteSnapshot.fromSample(sample, mLocationArbiter.getMode());
+        TestLocationSource.publishSnapshot(snap);
+
+        // Check for terminal state: update joystick position
+        RouteSessionState state = sample.getState();
+        if (state == RouteSessionState.STOPPED || state == RouteSessionState.FINISHED || state == RouteSessionState.ERROR) {
+            mCurLng = sample.getLongitudeWgs84();
+            mCurLat = sample.getLatitudeWgs84();
+            mCurAlt = sample.getAltitudeMeters();
+            mCurBea = (float) sample.getBearingDeg();
+            mSpeed = 0.0;
+            mJoyStick.setCurrentPosition(mCurLng, mCurLat, mCurAlt);
+            mJoyStick.show(); // Re-enable joystick when route ends
+        }
+    }
+
+    // ---- Provider Readiness ----
+
+    private boolean preflightRequiredProviders() {
+        if (mLocManager == null) return false;
+
+        // Check GPS
+        try {
+            mGpsProviderReady = mLocManager.isProviderEnabled(LocationManager.GPS_PROVIDER);
+            if (!mGpsProviderReady) {
+                XLog.w("SERVICEGO: GPS provider not enabled during preflight");
+                return false;
+            }
+        } catch (Exception e) {
+            XLog.e("SERVICEGO: GPS preflight failed", e);
+            mGpsProviderReady = false;
+            return false;
+        }
+
+        // Check NETWORK
+        try {
+            mNetworkProviderReady = mLocManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
+            if (!mNetworkProviderReady) {
+                XLog.w("SERVICEGO: NETWORK provider not enabled during preflight");
+                return false;
+            }
+        } catch (Exception e) {
+            XLog.e("SERVICEGO: NETWORK preflight failed", e);
+            mNetworkProviderReady = false;
+            return false;
+        }
+
+        // Attempt a controlled write with current canonical state
+        ServiceLocationState current = mLocationArbiter.getLocationState();
+        try {
+            setLocationGPS(current);
+            setLocationNetwork(current);
+        } catch (Exception e) {
+            XLog.e("SERVICEGO: preflight write test failed", e);
+            return false;
+        }
+
+        return true;
+    }
+
+    // ---- Route Commands (called from Binder) ----
+
+    private RouteStartResult startRouteInternal(RoutePlan plan) {
+        try {
+            // Validate request
+            if (plan == null) {
+                return RouteStartResult.failure(RouteStartResult.ErrorCode.INVALID_ROUTE, "Plan is null");
+            }
+
+            // Resolve altitude from current state if needed
+            RoutePlan resolvedPlan = plan;
+            if (plan.requiresAltitudeResolution()) {
+                resolvedPlan = plan.resolveAltitude(mCurAlt);
+            }
+
+            // Strict provider preflight
+            if (!preflightRequiredProviders()) {
+                boolean gpsOk = false;
+                boolean netOk = false;
+                try { gpsOk = mLocManager.isProviderEnabled(LocationManager.GPS_PROVIDER); } catch (Exception ignored) {}
+                try { netOk = mLocManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER); } catch (Exception ignored) {}
+
+                if (!gpsOk && !netOk) {
+                    return RouteStartResult.failure(RouteStartResult.ErrorCode.MOCK_PROVIDER_UNAVAILABLE, "Both GPS and NETWORK mock providers unavailable");
+                } else if (!gpsOk) {
+                    return RouteStartResult.failure(RouteStartResult.ErrorCode.GPS_PROVIDER_UNAVAILABLE, "GPS mock provider not ready");
+                } else if (!netOk) {
+                    return RouteStartResult.failure(RouteStartResult.ErrorCode.NETWORK_PROVIDER_UNAVAILABLE, "NETWORK mock provider not ready");
+                } else {
+                    return RouteStartResult.failure(RouteStartResult.ErrorCode.MOCK_PROVIDER_UNAVAILABLE, "Provider write test failed");
+                }
+            }
+
+            // Allocate monotonically increasing session ID
+            long sessionId = mNextRouteSessionId.incrementAndGet();
+
+            // Notify arbiter of new session
+            mLocationArbiter.beginRoute(sessionId);
+
+            // Hide joystick during route
+            mJoyStick.hide();
+
+            // Start controller
+            boolean controllerStarted = mRouteController.start(sessionId, resolvedPlan);
+            if (!controllerStarted) {
+                // Return ownership to manual
+                mLocationArbiter.beginRoute(0L); // Reset
+                mJoyStick.show();
+                return RouteStartResult.failure(RouteStartResult.ErrorCode.CONTROLLER_START_FAILED, "Controller failed to start");
+            }
+
+            mConsecutiveProviderFailureCycles = 0;
+            return RouteStartResult.success(sessionId);
+        } catch (Exception e) {
+            XLog.e("SERVICEGO: startRoute error", e);
+            return RouteStartResult.failure(RouteStartResult.ErrorCode.CONTROLLER_START_FAILED, e.getMessage());
+        }
+    }
+
+    // ---- Provider write methods (consume canonical state) ----
+
+    private void setLocationGPS(ServiceLocationState state) {
+        try {
+            Location loc = new Location(LocationManager.GPS_PROVIDER);
+            loc.setAccuracy(Criteria.ACCURACY_FINE);
+            loc.setAltitude(state.getAltitudeMeters());
+            loc.setBearing(state.getBearingDeg());
+            loc.setLatitude(state.getLatitudeWgs84());
+            loc.setLongitude(state.getLongitudeWgs84());
+            loc.setTime(System.currentTimeMillis());
+            loc.setSpeed((float) state.getSpeedMps());
+            loc.setElapsedRealtimeNanos(SystemClock.elapsedRealtimeNanos());
+            Bundle bundle = new Bundle();
+            bundle.putInt("satellites", 7);
+            loc.setExtras(bundle);
+
+            mLocManager.setTestProviderLocation(LocationManager.GPS_PROVIDER, loc);
+        } catch (Exception e) {
+            XLog.e("SERVICEGO: ERROR - setLocationGPS", e);
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void setLocationNetwork(ServiceLocationState state) {
+        try {
+            Location loc = new Location(LocationManager.NETWORK_PROVIDER);
+            loc.setAccuracy(Criteria.ACCURACY_COARSE);
+            loc.setAltitude(state.getAltitudeMeters());
+            loc.setBearing(state.getBearingDeg());
+            loc.setLatitude(state.getLatitudeWgs84());
+            loc.setLongitude(state.getLongitudeWgs84());
+            loc.setTime(System.currentTimeMillis());
+            loc.setSpeed((float) state.getSpeedMps());
+            loc.setElapsedRealtimeNanos(SystemClock.elapsedRealtimeNanos());
+
+            mLocManager.setTestProviderLocation(LocationManager.NETWORK_PROVIDER, loc);
+        } catch (Exception e) {
+            XLog.e("SERVICEGO: ERROR - setLocationNetwork", e);
+            throw new RuntimeException(e);
+        }
+    }
+
+    // ---- Original Provider Methods (adapted for canonical state) ----
 
     private void initNotification() {
         mActReceiver = new NoteActionReceiver();
@@ -153,21 +381,29 @@ public class ServiceGo extends Service {
         mJoyStick.setListener(new JoyStick.JoyStickClickListener() {
             @Override
             public void onMoveInfo(double speed, double disLng, double disLat, double angle) {
-                mSpeed = speed;
-                // 根据当前的经纬度和距离，计算下一个经纬度
-                // Latitude: 1 deg = 110.574 km // 纬度的每度的距离大约为 110.574km
-                // Longitude: 1 deg = 111.320*cos(latitude) km  // 经度的每度的距离从0km到111km不等
-                // 具体见：http://wp.mlab.tw/?p=2200
-                mCurLng += disLng / (111.320 * Math.cos(Math.abs(mCurLat) * Math.PI / 180));
-                mCurLat += disLat / 110.574;
-                mCurBea = (float) angle;
+                // Compute new position
+                double newLng = mCurLng + disLng / (111.320 * Math.cos(Math.abs(mCurLat) * Math.PI / 180));
+                double newLat = mCurLat + disLat / 110.574;
+
+                // Try to write through arbiter
+                boolean accepted = mLocationArbiter.updateManual(newLng, newLat, mCurAlt, speed, (float) angle);
+                if (accepted) {
+                    mCurLng = newLng;
+                    mCurLat = newLat;
+                    mSpeed = speed;
+                    mCurBea = (float) angle;
+                }
+                // If rejected (route owns location), do not mutate route state
             }
 
             @Override
             public void onPositionInfo(double lng, double lat, double alt) {
-                mCurLng = lng;
-                mCurLat = lat;
-                mCurAlt = alt;
+                boolean accepted = mLocationArbiter.updateManual(lng, lat, alt, mSpeed, mCurBea);
+                if (accepted) {
+                    mCurLng = lng;
+                    mCurLat = lat;
+                    mCurAlt = alt;
+                }
             }
         });
         mJoyStick.show();
@@ -187,8 +423,41 @@ public class ServiceGo extends Service {
                     Thread.sleep(100);
 
                     if (!isStop) {
-                        setLocationNetwork();
-                        setLocationGPS();
+                        // Get canonical state from arbiter
+                        ServiceLocationState state = mLocationArbiter.getLocationState();
+
+                        boolean networkOk = false;
+                        boolean gpsOk = false;
+
+                        try {
+                            setLocationNetwork(state);
+                            networkOk = true;
+                        } catch (Exception e) {
+                            XLog.e("SERVICEGO: setLocationNetwork failed");
+                        }
+
+                        try {
+                            setLocationGPS(state);
+                            gpsOk = true;
+                        } catch (Exception e) {
+                            XLog.e("SERVICEGO: setLocationGPS failed");
+                        }
+
+                        // Track consecutive failures
+                        if (networkOk && gpsOk) {
+                            mConsecutiveProviderFailureCycles = 0;
+                        } else {
+                            mConsecutiveProviderFailureCycles++;
+                            XLog.w("SERVICEGO: provider failure cycle " + mConsecutiveProviderFailureCycles);
+                        }
+
+                        // Fatal threshold check during route ownership
+                        if (mConsecutiveProviderFailureCycles >= PROVIDER_FAILURE_THRESHOLD
+                                && mLocationArbiter.getMode() != ServiceLocationMode.MANUAL) {
+                            long currentSession = mLocationArbiter.getCurrentSessionId();
+                            mRouteController.fail(currentSession,
+                                    "Provider write failure after " + PROVIDER_FAILURE_THRESHOLD + " consecutive cycles");
+                        }
 
                         sendEmptyMessage(HANDLER_MSG_ID);
                     }
@@ -233,6 +502,7 @@ public class ServiceGo extends Service {
         }
     }
 
+    @SuppressWarnings("unused")
     private void setLocationGPS() {
         try {
             // 尽可能模拟真实的 GPS 数据
@@ -288,6 +558,7 @@ public class ServiceGo extends Service {
         }
     }
 
+    @SuppressWarnings("unused")
     private void setLocationNetwork() {
         try {
             // 尽可能模拟真实的 NETWORK 数据
@@ -325,14 +596,39 @@ public class ServiceGo extends Service {
 
     public class ServiceGoBinder extends Binder {
         public void setPosition(double lng, double lat, double alt) {
-            mLocHandler.removeMessages(HANDLER_MSG_ID);
-            mCurLng = lng;
-            mCurLat = lat;
-            mCurAlt = alt;
-            mLocHandler.sendEmptyMessage(HANDLER_MSG_ID);
-            mJoyStick.setCurrentPosition(mCurLng, mCurLat, mCurAlt);
+            boolean accepted = mLocationArbiter.updateManual(lng, lat, alt, mSpeed, mCurBea);
+            if (accepted) {
+                mCurLng = lng;
+                mCurLat = lat;
+                mCurAlt = alt;
+                mJoyStick.setCurrentPosition(mCurLng, mCurLat, mCurAlt);
+            }
+        }
+
+        // V2-C Route Binder API
+        public RouteStartResult startRoute(RoutePlan plan) {
+            return startRouteInternal(plan);
+        }
+
+        public boolean pauseRoute(long sessionId) {
+            return mRouteController.pause(sessionId);
+        }
+
+        public boolean resumeRoute(long sessionId) {
+            return mRouteController.resume(sessionId);
+        }
+
+        public boolean stopRoute(long sessionId) {
+            return mRouteController.stop(sessionId);
+        }
+
+        public RouteSnapshot getRouteSnapshot() {
+            ServiceLocationMode mode = mLocationArbiter.getMode();
+            return mRouteController.getSnapshot(mode);
+        }
+
+        public ServiceLocationMode getLocationMode() {
+            return mLocationArbiter.getMode();
         }
     }
 }
-
-

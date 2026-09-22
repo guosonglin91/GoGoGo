@@ -12,6 +12,9 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
 
+import com.zcshou.route.RouteSessionState;
+import com.zcshou.route.RouteSnapshot;
+import com.zcshou.route.ServiceLocationMode;
 import com.zcshou.route.TestLocationSource;
 
 import java.text.SimpleDateFormat;
@@ -36,23 +39,23 @@ public class LocationMonitorActivity extends BaseActivity
     private TextView txtTime;
     private TextView txtElapsed;
 
-    // Route Test Location.
+    // Route Test Location (V2-C diagnostic).
     private TextView txtRouteSession;
     private TextView txtRouteState;
 
     private TextView txtRouteSourceLat;
     private TextView txtRouteSourceLon;
 
-    private TextView txtRouteDisplayLat;
-    private TextView txtRouteDisplayLon;
-
     private TextView txtRouteTargetSpeed;
-    private TextView txtRouteMeasuredSpeed;
+    private TextView txtRouteOutputSpeed;
     private TextView txtRouteBearing;
 
+    private TextView txtRouteDistance;
+    private TextView txtRouteLap;
     private TextView txtRouteTime;
     private TextView txtRouteAge;
     private TextView txtRouteProgress;
+    private TextView txtRouteErrorReason;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -75,16 +78,16 @@ public class LocationMonitorActivity extends BaseActivity
         txtRouteSourceLat = findViewById(R.id.route_test_source_lat);
         txtRouteSourceLon = findViewById(R.id.route_test_source_lon);
 
-        txtRouteDisplayLat = findViewById(R.id.route_test_display_lat);
-        txtRouteDisplayLon = findViewById(R.id.route_test_display_lon);
-
         txtRouteTargetSpeed = findViewById(R.id.route_test_target_speed);
-        txtRouteMeasuredSpeed = findViewById(R.id.route_test_measured_speed);
+        txtRouteOutputSpeed = findViewById(R.id.route_test_output_speed);
         txtRouteBearing = findViewById(R.id.route_test_bearing);
 
+        txtRouteDistance = findViewById(R.id.route_test_distance);
+        txtRouteLap = findViewById(R.id.route_test_lap);
         txtRouteTime = findViewById(R.id.route_test_time);
         txtRouteAge = findViewById(R.id.route_test_age);
         txtRouteProgress = findViewById(R.id.route_test_progress);
+        txtRouteErrorReason = findViewById(R.id.route_test_error_reason);
 
         locationManager =
                 (LocationManager) getSystemService(LOCATION_SERVICE);
@@ -244,6 +247,8 @@ public class LocationMonitorActivity extends BaseActivity
 
         boolean mock;
         try {
+            // Check mock provider status via LocationManager method
+            // (isFromMockProvider() deprecated but standard for API 31+)
             mock = location.isFromMockProvider();
         } catch (Exception e) {
             mock = false;
@@ -267,16 +272,18 @@ public class LocationMonitorActivity extends BaseActivity
         txtElapsed.setText("Age: " + ageMs + " ms");
     }
 
+    // ---- Route Snapshot Listener (V2-C diagnostic) ----
+
     @Override
     public void onRouteTestLocationChanged(
-            TestLocationSource.Snapshot snapshot
+            RouteSnapshot snapshot
     ) {
         runOnUiThread(() ->
                 renderRouteSnapshot(snapshot));
     }
 
     private void renderRouteSnapshot(
-            TestLocationSource.Snapshot snapshot
+            RouteSnapshot snapshot
     ) {
         if (snapshot == null) {
             txtRouteSession.setText("Session: -");
@@ -285,100 +292,112 @@ public class LocationMonitorActivity extends BaseActivity
             txtRouteSourceLat.setText("WGS84 Latitude: -");
             txtRouteSourceLon.setText("WGS84 Longitude: -");
 
-            txtRouteDisplayLat.setText("BD09 Latitude: -");
-            txtRouteDisplayLon.setText("BD09 Longitude: -");
-
             txtRouteTargetSpeed.setText("Target Speed: -");
-            txtRouteMeasuredSpeed.setText("Measured Speed: -");
+            txtRouteOutputSpeed.setText("Output Speed: -");
             txtRouteBearing.setText("Bearing: -");
 
+            txtRouteDistance.setText("Distance: -");
+            txtRouteLap.setText("Lap: -");
             txtRouteTime.setText("Route time: -");
             txtRouteAge.setText("Route age: -");
             txtRouteProgress.setText("Progress: -");
+            txtRouteErrorReason.setText("Error: -");
             return;
         }
 
         txtRouteSession.setText(
-                "Session: " + snapshot.sessionId
+                "Session: " + snapshot.getSessionId()
         );
 
         txtRouteState.setText(
-                "State: " + snapshot.state.name()
+                "State: " + snapshot.getState().name()
         );
 
         txtRouteTargetSpeed.setText(String.format(
                 Locale.US,
                 "Target Speed: %.3f m/s",
-                snapshot.targetSpeedMps
+                snapshot.getTargetSpeedMps()
         ));
 
-        txtRouteMeasuredSpeed.setText(String.format(
+        txtRouteOutputSpeed.setText(String.format(
                 Locale.US,
-                "Measured Speed: %.3f m/s",
-                snapshot.measuredSpeedMps
+                "Output Speed: %.3f m/s",
+                snapshot.getOutputSpeedMps()
         ));
 
         txtRouteBearing.setText(String.format(
                 Locale.US,
                 "Bearing: %.2f°",
-                snapshot.bearingDeg
+                snapshot.getBearingDeg()
         ));
 
-        if (snapshot.hasPosition) {
+        double lat = snapshot.getLatitudeWgs84();
+        double lon = snapshot.getLongitudeWgs84();
+
+        if (Double.isFinite(lat) && Double.isFinite(lon)) {
             txtRouteSourceLat.setText(String.format(
                     Locale.US,
                     "WGS84 Latitude: %.8f",
-                    snapshot.sourceLatitudeWgs84
+                    lat
             ));
 
             txtRouteSourceLon.setText(String.format(
                     Locale.US,
                     "WGS84 Longitude: %.8f",
-                    snapshot.sourceLongitudeWgs84
-            ));
-
-            txtRouteDisplayLat.setText(String.format(
-                    Locale.US,
-                    "BD09 Latitude: %.8f",
-                    snapshot.displayLatitudeBd09
-            ));
-
-            txtRouteDisplayLon.setText(String.format(
-                    Locale.US,
-                    "BD09 Longitude: %.8f",
-                    snapshot.displayLongitudeBd09
+                    lon
             ));
         } else {
             txtRouteSourceLat.setText("WGS84 Latitude: waiting");
             txtRouteSourceLon.setText("WGS84 Longitude: waiting");
-
-            txtRouteDisplayLat.setText("BD09 Latitude: waiting");
-            txtRouteDisplayLon.setText("BD09 Longitude: waiting");
         }
+
+        txtRouteDistance.setText(String.format(
+                Locale.US,
+                "Distance: %.2f / %.2f m",
+                snapshot.getDistanceMeters(),
+                snapshot.getRouteLengthMeters()
+        ));
+
+        txtRouteLap.setText(String.format(
+                Locale.US,
+                "Lap: %d",
+                snapshot.getLapCount()
+        ));
 
         String time = new SimpleDateFormat(
                 "yyyy-MM-dd HH:mm:ss.SSS",
                 Locale.getDefault()
-        ).format(new Date(snapshot.timestampMs));
+        ).format(new Date(snapshot.getTimestampMs()));
 
         txtRouteTime.setText("Route time: " + time);
 
         long ageMs = Math.max(
                 0L,
-                System.currentTimeMillis() - snapshot.timestampMs
+                System.currentTimeMillis() - snapshot.getTimestampMs()
         );
 
         txtRouteAge.setText("Route age: " + ageMs + " ms");
 
-        if (snapshot.index >= 0 && snapshot.total > 0) {
-            txtRouteProgress.setText(String.format(
-                    Locale.US,
-                    "Progress: %d / %d",
-                    snapshot.index + 1,
-                    snapshot.total
-            ));
+        txtRouteProgress.setText(String.format(
+                Locale.US,
+                "Progress: %.1f %%",
+                snapshot.getProgressFraction() * 100.0
+        ));
+
+        String error = snapshot.getErrorReason();
+        if (error != null && !error.isEmpty()) {
+            txtRouteErrorReason.setText("Error: " + error);
         } else {
-            txtRouteProgress.setText("Progress: waiting");
+            txtRouteErrorReason.setText("Error: none");
+        }
+
+        // Show mode info
+        ServiceLocationMode mode = snapshot.getMode();
+        if (mode != null) {
+            txtRouteState.setText(
+                    "State: " + snapshot.getState().name()
+                            + " | Mode: " + mode.name()
+            );
         }
     }
 

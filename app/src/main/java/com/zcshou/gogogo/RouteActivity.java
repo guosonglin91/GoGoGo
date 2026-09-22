@@ -1,8 +1,14 @@
 package com.zcshou.gogogo;
 
+import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
+import android.content.ServiceConnection;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.Looper;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Switch;
@@ -21,10 +27,13 @@ import com.baidu.mapapi.map.PolylineOptions;
 import com.baidu.mapapi.model.LatLng;
 import com.baidu.mapapi.utils.CoordinateConverter;
 import com.zcshou.route.GpxParser;
+import com.zcshou.route.RoutePlan;
 import com.zcshou.route.RoutePoint;
-import com.zcshou.route.RoutePlayer;
+import com.zcshou.route.RouteSessionState;
+import com.zcshou.route.RouteSnapshot;
+import com.zcshou.route.RouteStartResult;
 import com.zcshou.route.RouteTestMath;
-import com.zcshou.route.TestLocationSource;
+import com.zcshou.service.ServiceGo;
 
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -34,10 +43,7 @@ import java.util.Locale;
 public class RouteActivity extends BaseActivity {
 
     private static final int REQUEST_GPX = 901;
-    private static final long INTERVAL_MS = 1000L;
-
-    // If the imported final point is within this distance of the first point,
-    // treat it as a duplicate closing point and keep only one canonical copy.
+    private static final long UI_REFRESH_MS = 250L;
     private static final double CLOSING_POINT_TOLERANCE_M = 0.5;
 
     private MapView mapView;
@@ -61,74 +67,52 @@ public class RouteActivity extends BaseActivity {
 
     private volatile double playbackTargetSpeedMps = 0.0;
     private volatile boolean playbackLoopEnabled = false;
-    private volatile boolean playbackActive = false;
-    private volatile long currentSessionId = 0L;
-    private volatile float lastBearingDeg = 0.0f;
 
-    private final Object measurementLock = new Object();
-    private RoutePoint previousMeasuredPointWgs84;
-    private long previousMeasuredTimestampMs = 0L;
+    // V2-C Binder state
+    private ServiceGo.ServiceGoBinder mServiceBinder;
+    private boolean mBound = false;
+    private long mCurrentSessionId = 0L;
+    private RouteSnapshot mLastSnapshot;
 
-    private final RoutePlayer player = new RoutePlayer(new RoutePlayer.Listener() {
+    private final ServiceConnection mConnection = new ServiceConnection() {
         @Override
-        public void onPosition(RoutePoint displayPointBd09, int index, int total) {
-            if (index < 0 || index >= playbackSourceRouteWgs84.size()) {
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            mServiceBinder = (ServiceGo.ServiceGoBinder) service;
+            mBound = true;
+
+            // Restore existing active session snapshot
+            RouteSnapshot snap = mServiceBinder.getRouteSnapshot();
+            if (snap != null && snap.getSessionId() > 0L) {
+                mCurrentSessionId = snap.getSessionId();
+                updateFromSnapshot(snap);
+            }
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            mServiceBinder = null;
+            mBound = false;
+        }
+    };
+
+    private final Handler mUiHandler = new Handler(Looper.getMainLooper());
+    private final Runnable mUiRefreshRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!mBound || mServiceBinder == null) {
+                mUiHandler.postDelayed(this, UI_REFRESH_MS);
                 return;
             }
 
-            RoutePoint sourcePointWgs84 = playbackSourceRouteWgs84.get(index);
-            long nowMs = System.currentTimeMillis();
-
-            double measuredSpeedMps;
-            synchronized (measurementLock) {
-                measuredSpeedMps = RouteTestMath.measuredSpeedMps(
-                        previousMeasuredPointWgs84,
-                        previousMeasuredTimestampMs,
-                        sourcePointWgs84,
-                        nowMs
-                );
-
-                previousMeasuredPointWgs84 = sourcePointWgs84;
-                previousMeasuredTimestampMs = nowMs;
+            RouteSnapshot snap = mServiceBinder.getRouteSnapshot();
+            if (snap != null) {
+                mLastSnapshot = snap;
+                updateFromSnapshot(snap);
             }
 
-            float bearing = calculatePlaybackBearing(index);
-            lastBearingDeg = bearing;
-
-            TestLocationSource.publishPosition(
-                    currentSessionId,
-                    sourcePointWgs84.latitude,
-                    sourcePointWgs84.longitude,
-                    displayPointBd09.latitude,
-                    displayPointBd09.longitude,
-                    playbackTargetSpeedMps,
-                    measuredSpeedMps,
-                    bearing,
-                    nowMs,
-                    index,
-                    total
-            );
-
-            runOnUiThread(() ->
-                    updatePlaybackMarker(displayPointBd09, index, total));
+            mUiHandler.postDelayed(this, UI_REFRESH_MS);
         }
-
-        @Override
-        public void onFinished() {
-            playbackActive = false;
-            resetMeasurementBaseline();
-
-            TestLocationSource.publishState(
-                    currentSessionId,
-                    TestLocationSource.State.FINISHED
-            );
-
-            runOnUiThread(() -> {
-                statusText.setText("回放完成");
-                pauseButton.setText("暂停");
-            });
-        }
-    });
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -144,12 +128,53 @@ public class RouteActivity extends BaseActivity {
         pauseButton = findViewById(R.id.route_pause);
 
         findViewById(R.id.route_import).setOnClickListener(v -> openGpx());
-        findViewById(R.id.route_start).setOnClickListener(v -> startPlayback());
+        findViewById(R.id.route_start).setOnClickListener(v -> startRouteViaService());
         pauseButton.setOnClickListener(v -> togglePause());
-        findViewById(R.id.route_stop).setOnClickListener(v -> stopPlayback());
+        findViewById(R.id.route_stop).setOnClickListener(v -> stopRouteViaService());
+        findViewById(R.id.route_monitor).setOnClickListener(v ->
+                startActivity(new Intent(RouteActivity.this, LocationMonitorActivity.class)));
 
         statusText.setText("请先导入 GPX");
     }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+
+        // Ensure ServiceGo is running without position extras
+        Intent serviceIntent = new Intent(this, ServiceGo.class);
+        startForegroundService(serviceIntent);
+
+        // Bind to ServiceGo
+        bindService(serviceIntent, mConnection, Context.BIND_AUTO_CREATE);
+
+        // Start UI polling
+        mUiHandler.post(mUiRefreshRunnable);
+    }
+
+    @Override
+    protected void onStop() {
+        // Stop UI polling
+        mUiHandler.removeCallbacks(mUiRefreshRunnable);
+
+        // Unbind from ServiceGo — do NOT stop route
+        if (mBound) {
+            unbindService(mConnection);
+            mBound = false;
+            mServiceBinder = null;
+        }
+
+        super.onStop();
+    }
+
+    @Override
+    protected void onDestroy() {
+        // Only release UI/map resources — do NOT stop the route
+        mapView.onDestroy();
+        super.onDestroy();
+    }
+
+    // ---- GPX Import ----
 
     private void openGpx() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
@@ -234,7 +259,7 @@ public class RouteActivity extends BaseActivity {
 
             statusText.setText(String.format(
                     Locale.getDefault(),
-                    "已导入 %d 点，规范化 %d 点，闭合=%s，约 %.1f m",
+                    "已导入 %d 点，规范 %d 点，闭合=%s，约 %.1f m",
                     parsedGpsRouteWgs84.size(),
                     sourceRouteWgs84.size(),
                     importedWasClosedLoop ? "是" : "否",
@@ -248,6 +273,8 @@ public class RouteActivity extends BaseActivity {
             ).show();
         }
     }
+
+    // ---- Coordinate Conversion (WGS84 → BD09 for display only) ----
 
     private List<RoutePoint> convertGpsToBaidu(
             List<RoutePoint> gpsPoints
@@ -274,6 +301,8 @@ public class RouteActivity extends BaseActivity {
 
         return converted;
     }
+
+    // ---- Map Drawing ----
 
     private void drawRoute(
             List<RoutePoint> pointsBd09,
@@ -312,7 +341,9 @@ public class RouteActivity extends BaseActivity {
         }
     }
 
-    private void startPlayback() {
+    // ---- V2-C Route Control (via Binder) ----
+
+    private void startRouteViaService() {
         if (sourceRouteWgs84.size() < 2) {
             Toast.makeText(
                     this,
@@ -335,26 +366,26 @@ public class RouteActivity extends BaseActivity {
         if (speedMps <= 0.0 || speedMps > 20.0) {
             Toast.makeText(
                     this,
-                    "请输入 0～20 m/s 的测试速度",
+                    "请输入 0~20 m/s 的测试速度",
                     Toast.LENGTH_LONG
             ).show();
             return;
         }
 
-        if (playbackActive && currentSessionId > 0L) {
-            TestLocationSource.publishState(
-                    currentSessionId,
-                    TestLocationSource.State.STOPPED
-            );
+        if (!mBound || mServiceBinder == null) {
+            Toast.makeText(
+                    this,
+                    "ServiceGo 未连接，请稍后重试",
+                    Toast.LENGTH_LONG
+            ).show();
+            return;
         }
 
         playbackTargetSpeedMps = speedMps;
         playbackLoopEnabled = loopSwitch.isChecked();
 
-        double stepMeters =
-                playbackTargetSpeedMps
-                        * INTERVAL_MS
-                        / 1000.0;
+        // Resample route for consistent polyline display
+        double stepMeters = playbackTargetSpeedMps * 1000.0 / 1000.0;
 
         playbackSourceRouteWgs84 =
                 RouteTestMath.prepareForPlayback(
@@ -376,36 +407,42 @@ public class RouteActivity extends BaseActivity {
         playbackDisplayRouteBd09 =
                 convertGpsToBaidu(playbackSourceRouteWgs84);
 
-        currentSessionId =
-                TestLocationSource.beginSession(
-                        playbackTargetSpeedMps
-                );
-
-        lastBearingDeg = 0.0f;
-        resetMeasurementBaseline();
-        playbackActive = true;
-
-        player.configure(
-                playbackDisplayRouteBd09,
-                INTERVAL_MS,
-                playbackLoopEnabled
+        // Create RoutePlan and send to ServiceGo through Binder
+        RoutePlan plan = RoutePlan.request(
+                sourceRouteWgs84,
+                importedWasClosedLoop,
+                loopSwitch.isChecked(),
+                speedMps,
+                100L
         );
-        player.start();
 
-        pauseButton.setText("暂停");
+        RouteStartResult result = mServiceBinder.startRoute(plan);
 
-        statusText.setText(String.format(
-                Locale.getDefault(),
-                "Session %d：%.2f m/s，%d 点，loop=%s",
-                currentSessionId,
-                playbackTargetSpeedMps,
-                playbackSourceRouteWgs84.size(),
-                playbackLoopEnabled ? "on" : "off"
-        ));
+        if (result.isSuccess()) {
+            mCurrentSessionId = result.getSessionId();
+            pauseButton.setText("暂停");
+
+            statusText.setText(String.format(
+                    Locale.getDefault(),
+                    "Session %d: %.2f m/s, %d 点, loop=%s",
+                    mCurrentSessionId,
+                    playbackTargetSpeedMps,
+                    playbackSourceRouteWgs84.size(),
+                    playbackLoopEnabled ? "on" : "off"
+            ));
+        } else {
+            Toast.makeText(
+                    this,
+                    "路线启动失败: " + result.getMessage(),
+                    Toast.LENGTH_LONG
+            ).show();
+
+            statusText.setText("启动失败: " + result.getMessage());
+        }
     }
 
     private void togglePause() {
-        if (!playbackActive) {
+        if (!mBound || mServiceBinder == null || mCurrentSessionId <= 0L) {
             Toast.makeText(
                     this,
                     "请先开始路线回放",
@@ -414,145 +451,114 @@ public class RouteActivity extends BaseActivity {
             return;
         }
 
-        if (player.isPaused()) {
-            resetMeasurementBaseline();
-
-            TestLocationSource.publishState(
-                    currentSessionId,
-                    TestLocationSource.State.PLAYING
-            );
-
-            player.resume();
-            pauseButton.setText("暂停");
+        if (mLastSnapshot != null
+                && mLastSnapshot.getState() == RouteSessionState.PAUSED) {
+            // Resume
+            boolean ok = mServiceBinder.resumeRoute(mCurrentSessionId);
+            if (ok) {
+                pauseButton.setText("暂停");
+            }
         } else {
-            player.pause();
-            resetMeasurementBaseline();
-
-            TestLocationSource.publishState(
-                    currentSessionId,
-                    TestLocationSource.State.PAUSED
-            );
-
-            pauseButton.setText("继续");
+            // Pause
+            boolean ok = mServiceBinder.pauseRoute(mCurrentSessionId);
+            if (ok) {
+                pauseButton.setText("继续");
+            }
         }
     }
 
-    private void stopPlayback() {
-        player.stop();
-        resetMeasurementBaseline();
-
-        if (currentSessionId > 0L) {
-            TestLocationSource.publishState(
-                    currentSessionId,
-                    TestLocationSource.State.STOPPED
-            );
+    private void stopRouteViaService() {
+        if (!mBound || mServiceBinder == null || mCurrentSessionId <= 0L) {
+            return;
         }
 
-        playbackActive = false;
+        mServiceBinder.stopRoute(mCurrentSessionId);
         pauseButton.setText("暂停");
         statusText.setText("已停止");
     }
 
-    private float calculatePlaybackBearing(int index) {
-        if (playbackSourceRouteWgs84 == null
-                || playbackSourceRouteWgs84.size() < 2) {
-            return lastBearingDeg;
+    // ---- UI Snapshot Update ----
+
+    private void updateFromSnapshot(RouteSnapshot snap) {
+        if (snap == null) return;
+
+        long sessionId = snap.getSessionId();
+        RouteSessionState state = snap.getState();
+
+        // Update status text
+        String status;
+        switch (state) {
+            case PLAYING:
+                status = String.format(
+                        Locale.getDefault(),
+                        "Session %d: 回放中 %.1f / %.1f m (%.0f%%)",
+                        sessionId,
+                        snap.getDistanceMeters(),
+                        snap.getRouteLengthMeters(),
+                        snap.getProgressFraction() * 100.0
+                );
+                pauseButton.setText("暂停");
+                break;
+            case PAUSED:
+                status = String.format(
+                        Locale.getDefault(),
+                        "Session %d: 已暂停 %.1f / %.1f m",
+                        sessionId,
+                        snap.getDistanceMeters(),
+                        snap.getRouteLengthMeters()
+                );
+                pauseButton.setText("继续");
+                break;
+            case STOPPED:
+                status = String.format(
+                        Locale.getDefault(),
+                        "Session %d: 已停止 %.1f / %.1f m",
+                        sessionId,
+                        snap.getDistanceMeters(),
+                        snap.getRouteLengthMeters()
+                );
+                pauseButton.setText("暂停");
+                break;
+            case FINISHED:
+                status = "回放完成";
+                pauseButton.setText("暂停");
+                break;
+            case ERROR:
+                status = "错误: " + snap.getErrorReason();
+                pauseButton.setText("暂停");
+                break;
+            default:
+                status = "状态: " + state.name();
         }
 
-        int currentIndex = Math.max(
-                0,
-                Math.min(
-                        index,
-                        playbackSourceRouteWgs84.size() - 1
-                )
-        );
+        statusText.setText(status);
 
-        int nextIndex = currentIndex + 1;
+        // Update map marker — convert WGS84 snapshot position to BD09
+        double wgs84Lat = snap.getLatitudeWgs84();
+        double wgs84Lon = snap.getLongitudeWgs84();
 
-        if (nextIndex >= playbackSourceRouteWgs84.size()) {
-            if (playbackLoopEnabled) {
-                nextIndex = 0;
+        if (Double.isFinite(wgs84Lat) && Double.isFinite(wgs84Lon)) {
+            CoordinateConverter converter = new CoordinateConverter()
+                    .from(CoordinateConverter.CoordType.GPS)
+                    .coord(new LatLng(wgs84Lat, wgs84Lon));
+
+            LatLng bd09Pos = converter.convert();
+
+            if (movingMarker == null) {
+                movingMarker = (Marker) baiduMap.addOverlay(
+                        new MarkerOptions()
+                                .position(bd09Pos)
+                                .icon(BitmapDescriptorFactory.fromResource(
+                                        R.drawable.icon_gcoding
+                                ))
+                );
             } else {
-                return lastBearingDeg;
+                movingMarker.setPosition(bd09Pos);
             }
-        }
 
-        return RouteTestMath.bearingDegrees(
-                playbackSourceRouteWgs84.get(currentIndex),
-                playbackSourceRouteWgs84.get(nextIndex),
-                lastBearingDeg
-        );
-    }
-
-    private void resetMeasurementBaseline() {
-        synchronized (measurementLock) {
-            previousMeasuredPointWgs84 = null;
-            previousMeasuredTimestampMs = 0L;
-        }
-    }
-
-    private void updatePlaybackMarker(
-            RoutePoint displayPointBd09,
-            int index,
-            int total
-    ) {
-        LatLng latLng = new LatLng(
-                displayPointBd09.latitude,
-                displayPointBd09.longitude
-        );
-
-        if (movingMarker == null) {
-            movingMarker = (Marker) baiduMap.addOverlay(
-                    new MarkerOptions()
-                            .position(latLng)
-                            .icon(BitmapDescriptorFactory.fromResource(
-                                    R.drawable.icon_gcoding
-                            ))
-            );
-        } else {
-            movingMarker.setPosition(latLng);
-        }
-
-        baiduMap.animateMapStatus(
-                MapStatusUpdateFactory.newLatLng(latLng)
-        );
-
-        statusText.setText(String.format(
-                Locale.getDefault(),
-                "Session %d：回放中 %d / %d",
-                currentSessionId,
-                index + 1,
-                total
-        ));
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        mapView.onResume();
-    }
-
-    @Override
-    protected void onPause() {
-        mapView.onPause();
-        super.onPause();
-    }
-
-    @Override
-    protected void onDestroy() {
-        player.stop();
-        resetMeasurementBaseline();
-
-        if (playbackActive && currentSessionId > 0L) {
-            TestLocationSource.publishState(
-                    currentSessionId,
-                    TestLocationSource.State.STOPPED
+            baiduMap.animateMapStatus(
+                    MapStatusUpdateFactory.newLatLng(bd09Pos)
             );
         }
-
-        playbackActive = false;
-
-        mapView.onDestroy();
-        super.onDestroy();
     }
 }

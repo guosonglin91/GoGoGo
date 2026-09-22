@@ -17,6 +17,7 @@
             android:textSize="24sp"
             android:textStyle="bold" />
 
+        <!-- System Location Section -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -86,12 +87,13 @@
             android:layout_height="wrap_content"
             android:text="读取当前系统位置" />
 
+        <!-- Route Diagnostic Section -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:paddingBottom="8dp"
             android:paddingTop="24dp"
-            android:text="Route Test Location"
+            android:text="Route Test (V2-C Expected)"
             android:textSize="18sp"
             android:textStyle="bold" />
 
@@ -111,7 +113,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:paddingTop="10dp"
-            android:text="Source Location — WGS84"
+            android:text="Canonical WGS84 Position"
             android:textStyle="bold" />
 
         <TextView
@@ -127,25 +129,6 @@
             android:text="WGS84 Longitude: -" />
 
         <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingTop="10dp"
-            android:text="Display Location — BD09"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/route_test_display_lat"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="BD09 Latitude: -" />
-
-        <TextView
-            android:id="@+id/route_test_display_lon"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="BD09 Longitude: -" />
-
-        <TextView
             android:id="@+id/route_test_target_speed"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -153,16 +136,29 @@
             android:text="Target Speed: -" />
 
         <TextView
-            android:id="@+id/route_test_measured_speed"
+            android:id="@+id/route_test_output_speed"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Measured Speed: -" />
+            android:text="Output Speed: -" />
 
         <TextView
             android:id="@+id/route_test_bearing"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Bearing: -" />
+
+        <TextView
+            android:id="@+id/route_test_distance"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="10dp"
+            android:text="Distance: -" />
+
+        <TextView
+            android:id="@+id/route_test_lap"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Lap: -" />
 
         <TextView
             android:id="@+id/route_test_time"
@@ -180,13 +176,19 @@
             android:id="@+id/route_test_progress"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingBottom="18dp"
             android:text="Progress: -" />
+
+        <TextView
+            android:id="@+id/route_test_error_reason"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="18dp"
+            android:text="Error: -" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="V2-B.1 诊断说明：Source Location 使用 WGS84；Display Location 使用百度地图 BD09。Target Speed 是输入目标值，Measured Speed 按相邻 WGS84 点与实际时间间隔计算。Route Test 仅存在于应用进程内，不调用 ServiceGo，也不写入 Android 系统 Mock Location。"
+            android:text="V2-C 诊断说明：Route Test 显示控制器期望的 WGS84 路线样本；System Location 显示 Android LocationManager 实际观测值。百度地图坐标转换仅用于地图显示，不进入系统定位 Provider。"
             android:textSize="14sp" />
 
     </LinearLayout>

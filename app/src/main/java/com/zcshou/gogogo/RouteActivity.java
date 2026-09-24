@@ -586,6 +586,8 @@ public class RouteActivity extends BaseActivity {
         String status;
         switch (state) {
             case PLAYING:
+                exportEvidenceButton.setEnabled(false);
+                evidenceSessionInput.setEnabled(false);
                 status = String.format(
                         Locale.getDefault(),
                         "Session %d: 回放中 %.1f / %.1f m (%.0f%%)",
@@ -597,6 +599,8 @@ public class RouteActivity extends BaseActivity {
                 pauseButton.setText("暂停");
                 break;
             case PAUSED:
+                exportEvidenceButton.setEnabled(false);
+                evidenceSessionInput.setEnabled(false);
                 status = String.format(
                         Locale.getDefault(),
                         "Session %d: 已暂停 %.1f / %.1f m",

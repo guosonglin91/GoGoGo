@@ -189,13 +189,25 @@ public class MainActivity extends AppCompatActivity
     }
 
     private void shareSession() {
-        RecordingSnapshot snapshot = RecordingSnapshotBus.latest();
-        if (snapshot.getState() != RecordingState.COMPLETE
-                || snapshot.getSessionId() == null
-                || snapshot.getSessionId().isEmpty()) {
+        RecordingState state = RecordingSnapshotBus.latest().getState();
+        if (isSessionActive(state)) {
             Toast.makeText(
                     this,
-                    "只有已完整 finalization 的 Session 才能导出。",
+                    "Session 仍在记录或 finalization 中，暂不能导出。",
+                    Toast.LENGTH_LONG
+            ).show();
+            return;
+        }
+
+        final String evidenceSessionId;
+        try {
+            evidenceSessionId = SessionId.validate(
+                    sessionIdInput.getText().toString().trim()
+            );
+        } catch (EvidenceValidationException e) {
+            Toast.makeText(
+                    this,
+                    "Session ID 无效：" + e.getCode(),
                     Toast.LENGTH_LONG
             ).show();
             return;
@@ -208,7 +220,7 @@ public class MainActivity extends AppCompatActivity
 
         File sessionDir = new File(
                 base,
-                "v2e/consumer/session_" + snapshot.getSessionId()
+                "v2e/consumer/session_" + evidenceSessionId
         );
         File exportDir = new File(base, "v2e/exports");
 
@@ -216,7 +228,7 @@ public class MainActivity extends AppCompatActivity
             File zip = SessionExporter.exportSession(
                     sessionDir,
                     exportDir,
-                    snapshot.getSessionId()
+                    evidenceSessionId
             );
             Uri uri = FileProvider.getUriForFile(
                     this,
@@ -343,7 +355,7 @@ public class MainActivity extends AppCompatActivity
                         || state == RecordingState.READY
                         || state == RecordingState.RECORDING
         );
-        shareButton.setEnabled(state == RecordingState.COMPLETE);
+        shareButton.setEnabled(!isSessionActive(state));
         sessionIdInput.setEnabled(!isSessionActive(state));
     }
 

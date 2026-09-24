@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.content.ServiceConnection;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
@@ -16,6 +17,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.Nullable;
+import androidx.core.content.FileProvider;
 
 import com.baidu.mapapi.map.BaiduMap;
 import com.baidu.mapapi.map.BitmapDescriptorFactory;
@@ -27,6 +29,7 @@ import com.baidu.mapapi.map.PolylineOptions;
 import com.baidu.mapapi.model.LatLng;
 import com.baidu.mapapi.utils.CoordinateConverter;
 import com.zcshou.motion.MotionSessionId;
+import com.zcshou.motion.ProducerSessionExporter;
 import com.zcshou.route.GpxParser;
 import com.zcshou.route.RoutePlan;
 import com.zcshou.route.RoutePoint;
@@ -36,6 +39,7 @@ import com.zcshou.route.RouteStartResult;
 import com.zcshou.route.RouteTestMath;
 import com.zcshou.service.ServiceGo;
 
+import java.io.File;
 import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -58,6 +62,7 @@ public class RouteActivity extends BaseActivity {
     private Switch loopSwitch;
     private TextView statusText;
     private Button pauseButton;
+    private Button exportEvidenceButton;
 
     // Canonical route data is WGS84. BD09 is display-only.
     private List<RoutePoint> sourceRouteWgs84 = new ArrayList<>();
@@ -77,6 +82,7 @@ public class RouteActivity extends BaseActivity {
     private boolean mBound = false;
     private long mCurrentSessionId = 0L;
     private RouteSnapshot mLastSnapshot;
+    private String mCurrentEvidenceSessionId;
 
     private final ServiceConnection mConnection = new ServiceConnection() {
         @Override
@@ -131,6 +137,7 @@ public class RouteActivity extends BaseActivity {
         loopSwitch = findViewById(R.id.route_loop);
         statusText = findViewById(R.id.route_status);
         pauseButton = findViewById(R.id.route_pause);
+        exportEvidenceButton = findViewById(R.id.route_export_evidence);
 
         findViewById(R.id.route_import).setOnClickListener(v -> openGpx());
         findViewById(R.id.route_start).setOnClickListener(v -> startRouteViaService());
@@ -138,6 +145,7 @@ public class RouteActivity extends BaseActivity {
         findViewById(R.id.route_stop).setOnClickListener(v -> stopRouteViaService());
         findViewById(R.id.route_monitor).setOnClickListener(v ->
                 startActivity(new Intent(RouteActivity.this, LocationMonitorActivity.class)));
+        exportEvidenceButton.setOnClickListener(v -> exportProducerEvidence());
 
         evidenceSessionInput.setText(defaultEvidenceSessionId());
         statusText.setText("请先导入 GPX");
@@ -441,6 +449,9 @@ public class RouteActivity extends BaseActivity {
 
         if (result.isSuccess()) {
             mCurrentSessionId = result.getSessionId();
+            mCurrentEvidenceSessionId = evidenceSessionId;
+            exportEvidenceButton.setEnabled(false);
+            evidenceSessionInput.setEnabled(false);
             pauseButton.setText("暂停");
 
             statusText.setText(String.format(
@@ -460,6 +471,55 @@ public class RouteActivity extends BaseActivity {
             ).show();
 
             statusText.setText("启动失败: " + result.getMessage());
+        }
+    }
+
+    private void exportProducerEvidence() {
+        String evidenceId = mCurrentEvidenceSessionId;
+        if (evidenceId == null || evidenceId.isEmpty()) {
+            evidenceId = evidenceSessionInput.getText().toString().trim();
+        }
+
+        try {
+            evidenceId = MotionSessionId.validate(evidenceId);
+
+            File base = getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS);
+            if (base == null) {
+                base = getFilesDir();
+            }
+
+            File sessionDir = new File(
+                    base,
+                    "v2e/producer/session_" + evidenceId
+            );
+            File exportDir = new File(base, "v2e/exports");
+
+            File zip = ProducerSessionExporter.exportSession(
+                    sessionDir,
+                    exportDir,
+                    evidenceId
+            );
+
+            Uri uri = FileProvider.getUriForFile(
+                    this,
+                    BuildConfig.APPLICATION_ID + ".fileProvider",
+                    zip
+            );
+
+            Intent send = new Intent(Intent.ACTION_SEND);
+            send.setType("application/zip");
+            send.putExtra(Intent.EXTRA_STREAM, uri);
+            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(
+                    send,
+                    "Share V2-E producer evidence"
+            ));
+        } catch (Exception e) {
+            Toast.makeText(
+                    this,
+                    "证据尚未完成或导出失败: " + e.getMessage(),
+                    Toast.LENGTH_LONG
+            ).show();
         }
     }
 
@@ -547,14 +607,20 @@ public class RouteActivity extends BaseActivity {
                         snap.getRouteLengthMeters()
                 );
                 pauseButton.setText("暂停");
+                exportEvidenceButton.setEnabled(true);
+                evidenceSessionInput.setEnabled(true);
                 break;
             case FINISHED:
                 status = "回放完成";
                 pauseButton.setText("暂停");
+                exportEvidenceButton.setEnabled(true);
+                evidenceSessionInput.setEnabled(true);
                 break;
             case ERROR:
                 status = "错误: " + snap.getErrorReason();
                 pauseButton.setText("暂停");
+                exportEvidenceButton.setEnabled(true);
+                evidenceSessionInput.setEnabled(true);
                 break;
             default:
                 status = "状态: " + state.name();

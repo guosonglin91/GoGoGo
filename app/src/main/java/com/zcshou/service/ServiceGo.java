@@ -17,6 +17,7 @@ import android.location.provider.ProviderProperties;
 import android.os.Binder;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
@@ -28,9 +29,15 @@ import androidx.annotation.NonNull;
 import androidx.core.app.NotificationCompat;
 
 import com.elvishew.xlog.XLog;
+import com.zcshou.gogogo.BuildConfig;
 import com.zcshou.gogogo.MainActivity;
 import com.zcshou.gogogo.R;
 import com.zcshou.joystick.JoyStick;
+import com.zcshou.motion.HumanMotionConfig;
+import com.zcshou.motion.ProducerEvidenceRecorder;
+import com.zcshou.motion.ProducerSessionMetadata;
+import com.zcshou.motion.SyntheticMotionCoordinator;
+import com.zcshou.motion.SyntheticMotionStatus;
 import com.zcshou.route.LocationStateArbiter;
 import com.zcshou.route.RoutePlan;
 import com.zcshou.route.RoutePlaybackController;
@@ -41,6 +48,10 @@ import com.zcshou.route.RouteStartResult;
 import com.zcshou.route.ServiceLocationMode;
 import com.zcshou.route.ServiceLocationState;
 import com.zcshou.route.TestLocationSource;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
 
 public class ServiceGo extends Service {
     // 定位相关变量
@@ -73,6 +84,12 @@ public class ServiceGo extends Service {
     private final java.util.concurrent.atomic.AtomicLong mNextRouteSessionId = new java.util.concurrent.atomic.AtomicLong(0L);
     private LocationStateArbiter mLocationArbiter;
     private RoutePlaybackController mRouteController;
+
+    // V2-E producer evidence. Synthetic motion remains producer-internal.
+    private final SyntheticMotionCoordinator mMotionCoordinator =
+            new SyntheticMotionCoordinator();
+    private long mProducerStartElapsedNs = -1L;
+    private HumanMotionConfig mProducerMotionConfig;
 
     private volatile boolean mGpsProviderReady = false;
     private volatile boolean mNetworkProviderReady = false;
@@ -150,6 +167,7 @@ public class ServiceGo extends Service {
         if (mRouteController != null) {
             mRouteController.shutdown();
         }
+        finishProducerEvidence("SESSION_INTERRUPTED");
         TestLocationSource.clear();
 
         isStop = true;
@@ -176,6 +194,9 @@ public class ServiceGo extends Service {
         boolean accepted = mLocationArbiter.acceptRouteSample(sample);
         if (!accepted) return;
 
+        // Feed the isolated V2-E producer evidence path after arbitration.
+        mMotionCoordinator.onRouteSample(sample);
+
         // Publish to diagnostic mirror
         RouteSnapshot snap = RouteSnapshot.fromSample(sample, mLocationArbiter.getMode());
         TestLocationSource.publishSnapshot(snap);
@@ -190,6 +211,12 @@ public class ServiceGo extends Service {
             mSpeed = 0.0;
             mJoyStick.setCurrentPosition(mCurLng, mCurLat, mCurAlt);
             mJoyStick.show(); // Re-enable joystick when route ends
+
+            finishProducerEvidence(
+                    state == RouteSessionState.ERROR
+                            ? "ROUTE_ERROR"
+                            : null
+            );
         }
     }
 
@@ -270,22 +297,64 @@ public class ServiceGo extends Service {
                 }
             }
 
-            // Allocate monotonically increasing session ID
+            // A newer route must never mix evidence with an older active route.
+            if (mMotionCoordinator.snapshot().isActive()) {
+                finishProducerEvidence("SESSION_REPLACED");
+            }
+
             long sessionId = mNextRouteSessionId.incrementAndGet();
 
-            // Notify arbiter of new session
-            mLocationArbiter.beginRoute(sessionId);
+            String evidenceSessionId = resolvedPlan.getEvidenceSessionId();
+            if (evidenceSessionId != null) {
+                long seed = 0x563245L ^ (long) evidenceSessionId.hashCode();
+                mProducerMotionConfig = HumanMotionConfig.defaultConfig(seed);
 
-            // Hide joystick during route
+                File base = getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS);
+                if (base == null) {
+                    base = getFilesDir();
+                }
+                File producerRoot = new File(base, "v2e/producer");
+
+                try {
+                    mMotionCoordinator.start(
+                            sessionId,
+                            evidenceSessionId,
+                            producerRoot,
+                            mProducerMotionConfig
+                    );
+                    mProducerStartElapsedNs =
+                            SystemClock.elapsedRealtimeNanos();
+                } catch (Exception e) {
+                    XLog.e("SERVICEGO: producer evidence start failed", e);
+                    mProducerMotionConfig = null;
+                    mProducerStartElapsedNs = -1L;
+                    return RouteStartResult.failure(
+                            RouteStartResult.ErrorCode.CONTROLLER_START_FAILED,
+                            "V2-E producer evidence start failed"
+                    );
+                }
+            }
+
+            if (!mLocationArbiter.beginRoute(sessionId)) {
+                finishProducerEvidence("ARBITER_START_FAILED");
+                return RouteStartResult.failure(
+                        RouteStartResult.ErrorCode.CONTROLLER_START_FAILED,
+                        "Location arbiter rejected route session"
+                );
+            }
+
             mJoyStick.hide();
 
-            // Start controller
-            boolean controllerStarted = mRouteController.start(sessionId, resolvedPlan);
+            boolean controllerStarted =
+                    mRouteController.start(sessionId, resolvedPlan);
             if (!controllerStarted) {
-                // Return ownership to manual
-                mLocationArbiter.beginRoute(0L); // Reset
+                mLocationArbiter.cancelRoute(sessionId);
+                finishProducerEvidence("CONTROLLER_START_FAILED");
                 mJoyStick.show();
-                return RouteStartResult.failure(RouteStartResult.ErrorCode.CONTROLLER_START_FAILED, "Controller failed to start");
+                return RouteStartResult.failure(
+                        RouteStartResult.ErrorCode.CONTROLLER_START_FAILED,
+                        "Controller failed to start"
+                );
             }
 
             mConsecutiveProviderFailureCycles = 0;
@@ -308,12 +377,20 @@ public class ServiceGo extends Service {
             loc.setLongitude(state.getLongitudeWgs84());
             loc.setTime(System.currentTimeMillis());
             loc.setSpeed((float) state.getSpeedMps());
-            loc.setElapsedRealtimeNanos(SystemClock.elapsedRealtimeNanos());
+            long locationElapsedNs = SystemClock.elapsedRealtimeNanos();
+            loc.setElapsedRealtimeNanos(locationElapsedNs);
             Bundle bundle = new Bundle();
             bundle.putInt("satellites", 7);
             loc.setExtras(bundle);
 
             mLocManager.setTestProviderLocation(LocationManager.GPS_PROVIDER, loc);
+            recordProducerPublication(
+                    LocationManager.GPS_PROVIDER,
+                    SystemClock.elapsedRealtimeNanos(),
+                    locationElapsedNs,
+                    state,
+                    loc.getAccuracy()
+            );
         } catch (Exception e) {
             XLog.e("SERVICEGO: ERROR - setLocationGPS", e);
             throw new RuntimeException(e);
@@ -330,13 +407,124 @@ public class ServiceGo extends Service {
             loc.setLongitude(state.getLongitudeWgs84());
             loc.setTime(System.currentTimeMillis());
             loc.setSpeed((float) state.getSpeedMps());
-            loc.setElapsedRealtimeNanos(SystemClock.elapsedRealtimeNanos());
+            long locationElapsedNs = SystemClock.elapsedRealtimeNanos();
+            loc.setElapsedRealtimeNanos(locationElapsedNs);
 
             mLocManager.setTestProviderLocation(LocationManager.NETWORK_PROVIDER, loc);
+            recordProducerPublication(
+                    LocationManager.NETWORK_PROVIDER,
+                    SystemClock.elapsedRealtimeNanos(),
+                    locationElapsedNs,
+                    state,
+                    loc.getAccuracy()
+            );
         } catch (Exception e) {
             XLog.e("SERVICEGO: ERROR - setLocationNetwork", e);
             throw new RuntimeException(e);
         }
+    }
+
+    // ---- V2-E Producer Evidence ----
+
+    private void recordProducerPublication(
+            String provider,
+            long publicationElapsedNs,
+            long locationElapsedNs,
+            ServiceLocationState state,
+            double accuracyM
+    ) {
+        if (!mMotionCoordinator.snapshot().isActive()) {
+            return;
+        }
+
+        ServiceLocationMode mode = mLocationArbiter.getMode();
+        if (mode == ServiceLocationMode.MANUAL) {
+            return;
+        }
+
+        mMotionCoordinator.onLocationPublished(
+                provider,
+                publicationElapsedNs,
+                locationElapsedNs,
+                state.getLatitudeWgs84(),
+                state.getLongitudeWgs84(),
+                state.getSpeedMps(),
+                state.getBearingDeg(),
+                accuracyM
+        );
+    }
+
+    private void finishProducerEvidence(String additionalErrorCode) {
+        SyntheticMotionStatus status = mMotionCoordinator.snapshot();
+        if (!status.isActive()) {
+            return;
+        }
+
+        HumanMotionConfig config = mProducerMotionConfig;
+        if (config == null) {
+            config = HumanMotionConfig.defaultConfig(
+                    0x563245L
+                            ^ (long) status.getEvidenceSessionId().hashCode()
+            );
+        }
+
+        ProducerSessionMetadata.Builder builder =
+                new ProducerSessionMetadata.Builder(
+                        status.getEvidenceSessionId(),
+                        status.getRouteSessionId(),
+                        config
+                )
+                        .elapsedRange(
+                                mProducerStartElapsedNs,
+                                SystemClock.elapsedRealtimeNanos()
+                        )
+                        .appVersion(BuildConfig.VERSION_NAME)
+                        .sourceCommitSha(BuildConfig.SOURCE_COMMIT_SHA)
+                        .device(
+                                Build.MODEL,
+                                Build.VERSION.RELEASE,
+                                Build.VERSION.SDK_INT
+                        )
+                        .bootMarker(readBootMarker());
+
+        for (String code : status.getErrorCodes()) {
+            builder.addErrorCode(code);
+        }
+        if (additionalErrorCode != null
+                && !additionalErrorCode.isEmpty()) {
+            builder.addErrorCode(additionalErrorCode);
+        }
+
+        ProducerEvidenceRecorder.CloseResult result =
+                mMotionCoordinator.finish(builder.build());
+
+        if (result == null || !result.isSuccess()) {
+            XLog.e(
+                    "SERVICEGO: producer evidence finalization failed: "
+                            + (result == null
+                            ? "TRACE_CLOSE_FAILURE"
+                            : result.getErrorCode())
+            );
+        }
+
+        mProducerMotionConfig = null;
+        mProducerStartElapsedNs = -1L;
+    }
+
+    private String readBootMarker() {
+        try (BufferedReader reader = new BufferedReader(
+                new FileReader("/proc/sys/kernel/random/boot_id"))) {
+            String line = reader.readLine();
+            if (line != null && !line.trim().isEmpty()) {
+                return line.trim();
+            }
+        } catch (Exception ignored) {
+        }
+
+        long approximateBootEpochMs =
+                System.currentTimeMillis()
+                        - SystemClock.elapsedRealtime();
+        return Build.FINGERPRINT + ":" + approximateBootEpochMs;
     }
 
     // ---- Original Provider Methods (adapted for canonical state) ----

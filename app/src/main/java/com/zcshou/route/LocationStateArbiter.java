@@ -57,6 +57,23 @@ public final class LocationStateArbiter {
         return true;
     }
 
+    public synchronized boolean cancelRoute(long sessionId) {
+        if (sessionId != currentSessionId || !routeActive) {
+            return false;
+        }
+
+        routeActive = false;
+        mode = ServiceLocationMode.MANUAL;
+        currentState = ServiceLocationState.manual(
+                currentState.getLongitudeWgs84(),
+                currentState.getLatitudeWgs84(),
+                currentState.getAltitudeMeters(),
+                0.0,
+                currentState.getBearingDeg()
+        );
+        return true;
+    }
+
     public synchronized boolean acceptRouteSample(RouteSample sample) {
         // Reject stale session samples
         if (sample.getSessionId() != currentSessionId) {

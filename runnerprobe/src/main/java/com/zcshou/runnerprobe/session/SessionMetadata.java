@@ -23,11 +23,17 @@ public final class SessionMetadata {
     private final String permissionState;
     private final String detectorName;
     private final String detectorVendor;
+    private final int detectorId;
+    private final int detectorType;
+    private final String detectorStringType;
     private final int detectorVersion;
     private final boolean detectorWakeUp;
     private final int detectorReportingMode;
     private final String counterName;
     private final String counterVendor;
+    private final int counterId;
+    private final int counterType;
+    private final String counterStringType;
     private final int counterVersion;
     private final boolean counterWakeUp;
     private final int counterReportingMode;
@@ -49,11 +55,17 @@ public final class SessionMetadata {
         permissionState = safe(b.permissionState);
         detectorName = safe(b.detectorName);
         detectorVendor = safe(b.detectorVendor);
+        detectorId = b.detectorId;
+        detectorType = b.detectorType;
+        detectorStringType = safe(b.detectorStringType);
         detectorVersion = b.detectorVersion;
         detectorWakeUp = b.detectorWakeUp;
         detectorReportingMode = b.detectorReportingMode;
         counterName = safe(b.counterName);
         counterVendor = safe(b.counterVendor);
+        counterId = b.counterId;
+        counterType = b.counterType;
+        counterStringType = safe(b.counterStringType);
         counterVersion = b.counterVersion;
         counterWakeUp = b.counterWakeUp;
         counterReportingMode = b.counterReportingMode;
@@ -93,11 +105,17 @@ public final class SessionMetadata {
         appendField(out, "permission_state", permissionState, true);
         appendField(out, "detector_name", detectorName, true);
         appendField(out, "detector_vendor", detectorVendor, true);
+        appendNumber(out, "detector_id", detectorId, true);
+        appendNumber(out, "detector_type", detectorType, true);
+        appendField(out, "detector_string_type", detectorStringType, true);
         appendNumber(out, "detector_version", detectorVersion, true);
         appendBoolean(out, "detector_wake_up", detectorWakeUp, true);
         appendNumber(out, "detector_reporting_mode", detectorReportingMode, true);
         appendField(out, "counter_name", counterName, true);
         appendField(out, "counter_vendor", counterVendor, true);
+        appendNumber(out, "counter_id", counterId, true);
+        appendNumber(out, "counter_type", counterType, true);
+        appendField(out, "counter_string_type", counterStringType, true);
         appendNumber(out, "counter_version", counterVersion, true);
         appendBoolean(out, "counter_wake_up", counterWakeUp, true);
         appendNumber(out, "counter_reporting_mode", counterReportingMode, true);
@@ -197,11 +215,17 @@ public final class SessionMetadata {
         private String permissionState = "";
         private String detectorName = "";
         private String detectorVendor = "";
+        private int detectorId = -1;
+        private int detectorType = -1;
+        private String detectorStringType = "";
         private int detectorVersion = -1;
         private boolean detectorWakeUp;
         private int detectorReportingMode = -1;
         private String counterName = "";
         private String counterVendor = "";
+        private int counterId = -1;
+        private int counterType = -1;
+        private String counterStringType = "";
         private int counterVersion = -1;
         private boolean counterWakeUp;
         private int counterReportingMode = -1;
@@ -270,6 +294,22 @@ public final class SessionMetadata {
             return this;
         }
 
+        public Builder detectorIdentity(
+                String name,
+                String vendor,
+                int id,
+                int type,
+                String stringType,
+                int version,
+                boolean wakeUp,
+                int reportingMode
+        ) {
+            detectorId = id;
+            detectorType = type;
+            detectorStringType = stringType;
+            return detector(name, vendor, version, wakeUp, reportingMode);
+        }
+
         public Builder counter(String name, String vendor) {
             return counter(name, vendor, -1, false, -1);
         }
@@ -287,6 +327,22 @@ public final class SessionMetadata {
             counterWakeUp = wakeUp;
             counterReportingMode = reportingMode;
             return this;
+        }
+
+        public Builder counterIdentity(
+                String name,
+                String vendor,
+                int id,
+                int type,
+                String stringType,
+                int version,
+                boolean wakeUp,
+                int reportingMode
+        ) {
+            counterId = id;
+            counterType = type;
+            counterStringType = stringType;
+            return counter(name, vendor, version, wakeUp, reportingMode);
         }
 
         public Builder addLifecycleEvent(String value) {

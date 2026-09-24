@@ -331,9 +331,13 @@ public class ServiceGo extends Service {
                     XLog.e("SERVICEGO: producer evidence start failed", e);
                     mProducerMotionConfig = null;
                     mProducerStartElapsedNs = -1L;
+                    String detail = e.getMessage();
                     return RouteStartResult.failure(
                             RouteStartResult.ErrorCode.CONTROLLER_START_FAILED,
                             "V2-E producer evidence start failed"
+                                    + (detail == null || detail.isEmpty()
+                                    ? ""
+                                    : ": " + detail)
                     );
                 }
             }

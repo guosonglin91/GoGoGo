@@ -195,7 +195,19 @@ public class MotionRecordingService extends Service
         try {
             store = new SessionFileStore(consumerRoot, sessionId);
         } catch (Exception e) {
-            failStart(RecordingError.SESSION_START_FAILURE, "TRACE_WRITE_FAILURE");
+            String message = e.getMessage();
+            if (message != null
+                    && message.startsWith("SESSION_ID_ALREADY_EXISTS")) {
+                failStart(
+                        RecordingError.SESSION_ID_ALREADY_EXISTS,
+                        "SESSION_ID_ALREADY_EXISTS"
+                );
+            } else {
+                failStart(
+                        RecordingError.SESSION_START_FAILURE,
+                        "TRACE_WRITE_FAILURE"
+                );
+            }
             return;
         }
 

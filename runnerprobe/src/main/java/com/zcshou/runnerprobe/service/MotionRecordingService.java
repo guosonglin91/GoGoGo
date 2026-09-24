@@ -363,11 +363,17 @@ public class MotionRecordingService extends Service
                     .permissionState(permissionSummary())
                     .detector(
                             sensorName(detectorSensor),
-                            sensorVendor(detectorSensor)
+                            sensorVendor(detectorSensor),
+                            sensorVersion(detectorSensor),
+                            sensorWakeUp(detectorSensor),
+                            sensorReportingMode(detectorSensor)
                     )
                     .counter(
                             sensorName(counterSensor),
-                            sensorVendor(counterSensor)
+                            sensorVendor(counterSensor),
+                            sensorVersion(counterSensor),
+                            sensorWakeUp(counterSensor),
+                            sensorReportingMode(counterSensor)
                     );
 
             for (String event : lifecycleEvents) {
@@ -795,6 +801,18 @@ public class MotionRecordingService extends Service
 
     private static String sensorVendor(Sensor sensor) {
         return sensor == null ? "" : sensor.getVendor();
+    }
+
+    private static int sensorVersion(Sensor sensor) {
+        return sensor == null ? -1 : sensor.getVersion();
+    }
+
+    private static boolean sensorWakeUp(Sensor sensor) {
+        return sensor != null && sensor.isWakeUpSensor();
+    }
+
+    private static int sensorReportingMode(Sensor sensor) {
+        return sensor == null ? -1 : sensor.getReportingMode();
     }
 
     private boolean isActive() {

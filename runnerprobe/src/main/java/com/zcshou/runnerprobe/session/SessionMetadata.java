@@ -23,8 +23,14 @@ public final class SessionMetadata {
     private final String permissionState;
     private final String detectorName;
     private final String detectorVendor;
+    private final int detectorVersion;
+    private final boolean detectorWakeUp;
+    private final int detectorReportingMode;
     private final String counterName;
     private final String counterVendor;
+    private final int counterVersion;
+    private final boolean counterWakeUp;
+    private final int counterReportingMode;
     private final List<String> lifecycleEvents;
     private final List<String> errorCodes;
 
@@ -43,8 +49,14 @@ public final class SessionMetadata {
         permissionState = safe(b.permissionState);
         detectorName = safe(b.detectorName);
         detectorVendor = safe(b.detectorVendor);
+        detectorVersion = b.detectorVersion;
+        detectorWakeUp = b.detectorWakeUp;
+        detectorReportingMode = b.detectorReportingMode;
         counterName = safe(b.counterName);
         counterVendor = safe(b.counterVendor);
+        counterVersion = b.counterVersion;
+        counterWakeUp = b.counterWakeUp;
+        counterReportingMode = b.counterReportingMode;
         lifecycleEvents = Collections.unmodifiableList(new ArrayList<>(b.lifecycleEvents));
         errorCodes = Collections.unmodifiableList(new ArrayList<>(b.errorCodes));
     }
@@ -81,8 +93,14 @@ public final class SessionMetadata {
         appendField(out, "permission_state", permissionState, true);
         appendField(out, "detector_name", detectorName, true);
         appendField(out, "detector_vendor", detectorVendor, true);
+        appendNumber(out, "detector_version", detectorVersion, true);
+        appendBoolean(out, "detector_wake_up", detectorWakeUp, true);
+        appendNumber(out, "detector_reporting_mode", detectorReportingMode, true);
         appendField(out, "counter_name", counterName, true);
         appendField(out, "counter_vendor", counterVendor, true);
+        appendNumber(out, "counter_version", counterVersion, true);
+        appendBoolean(out, "counter_wake_up", counterWakeUp, true);
+        appendNumber(out, "counter_reporting_mode", counterReportingMode, true);
         appendArray(out, "lifecycle_events", lifecycleEvents, true);
         appendArray(out, "error_codes", mergedErrors, false);
         out.append("}\n");
@@ -95,6 +113,16 @@ public final class SessionMetadata {
     }
 
     private static void appendNumber(StringBuilder out, String key, long value, boolean comma) {
+        out.append("  ").append(quote(key)).append(": ").append(value);
+        out.append(comma ? ",\n" : "\n");
+    }
+
+    private static void appendBoolean(
+            StringBuilder out,
+            String key,
+            boolean value,
+            boolean comma
+    ) {
         out.append("  ").append(quote(key)).append(": ").append(value);
         out.append(comma ? ",\n" : "\n");
     }
@@ -169,8 +197,14 @@ public final class SessionMetadata {
         private String permissionState = "";
         private String detectorName = "";
         private String detectorVendor = "";
+        private int detectorVersion = -1;
+        private boolean detectorWakeUp;
+        private int detectorReportingMode = -1;
         private String counterName = "";
         private String counterVendor = "";
+        private int counterVersion = -1;
+        private boolean counterWakeUp;
+        private int counterReportingMode = -1;
         private final List<String> lifecycleEvents = new ArrayList<>();
         private final List<String> errorCodes = new ArrayList<>();
 
@@ -218,14 +252,40 @@ public final class SessionMetadata {
         }
 
         public Builder detector(String name, String vendor) {
+            return detector(name, vendor, -1, false, -1);
+        }
+
+        public Builder detector(
+                String name,
+                String vendor,
+                int version,
+                boolean wakeUp,
+                int reportingMode
+        ) {
             detectorName = name;
             detectorVendor = vendor;
+            detectorVersion = version;
+            detectorWakeUp = wakeUp;
+            detectorReportingMode = reportingMode;
             return this;
         }
 
         public Builder counter(String name, String vendor) {
+            return counter(name, vendor, -1, false, -1);
+        }
+
+        public Builder counter(
+                String name,
+                String vendor,
+                int version,
+                boolean wakeUp,
+                int reportingMode
+        ) {
             counterName = name;
             counterVendor = vendor;
+            counterVersion = version;
+            counterWakeUp = wakeUp;
+            counterReportingMode = reportingMode;
             return this;
         }
 

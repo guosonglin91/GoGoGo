@@ -1,8 +1,8 @@
-def sourceCommitSha = System.getenv('GITHUB_SHA') ?: 'LOCAL'
-
 plugins {
     id "com.android.application"
 }
+
+def sourceCommitSha = System.getenv('GITHUB_SHA') ?: 'LOCAL'
 
 android {
     compileSdk = 32

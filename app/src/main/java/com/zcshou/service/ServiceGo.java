@@ -818,5 +818,13 @@ public class ServiceGo extends Service {
         public ServiceLocationMode getLocationMode() {
             return mLocationArbiter.getMode();
         }
+
+        public String getEvidenceSessionId() {
+            SyntheticMotionStatus status = mMotionCoordinator.snapshot();
+            if (!status.isActive()) {
+                return "";
+            }
+            return status.getEvidenceSessionId();
+        }
     }
 }

@@ -62,6 +62,14 @@ class RunCaseContractTest(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("debuggable", result.stderr)
 
+    def test_runnerprobe_arms_before_counter_baseline(self):
+        text = SCRIPT.read_text(encoding="utf-8")
+        arm = text.index("Arm RunnerProbe")
+        baseline = text.index("com.zcshou.v2finjector.action.BASELINE")
+        begin = text.index("Begin Official Recording")
+        self.assertLess(arm, baseline)
+        self.assertLess(baseline, begin)
+
     def test_script_has_unconditional_sensorservice_cleanup(self):
         text = SCRIPT.read_text(encoding="utf-8")
         self.assertIn("trap cleanup EXIT INT TERM", text)

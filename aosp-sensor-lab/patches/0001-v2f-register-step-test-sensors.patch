@@ -1,0 +1,144 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: V2-F Sensor Lab <v2f-lab@example.invalid>
+Date: Thu, 24 Sep 2026 00:00:00 +0000
+Subject: [PATCH] sensorservice: register V2-F lab step sensors on debuggable builds
+
+This patch is intentionally limited to AOSP development images. It adds two
+SensorService-owned descriptors so an ordinary SensorManager consumer can
+observe STEP_DETECTOR and STEP_COUNTER events supplied through Android's
+development-only replay/data-injection path.
+
+diff --git a/services/sensorservice/Android.bp b/services/sensorservice/Android.bp
+index 8c80dd8..1111111 100644
+--- a/services/sensorservice/Android.bp
++++ b/services/sensorservice/Android.bp
+@@ -38,6 +38,7 @@ cc_library {
+         "SensorRegistrationInfo.cpp",
+         "SensorService.cpp",
+         "SensorServiceUtils.cpp",
++        "V2fLabSensor.cpp",
+     ],
+
+diff --git a/services/sensorservice/SensorService.cpp b/services/sensorservice/SensorService.cpp
+index eabbb39..2222222 100644
+--- a/services/sensorservice/SensorService.cpp
++++ b/services/sensorservice/SensorService.cpp
+@@ -20,6 +20,7 @@
+ #include "SensorService.h"
+
+ #include <aidl/android/hardware/sensors/ISensors.h>
++#include <android-base/properties.h>
+ #include <android-base/strings.h>
+@@ -72,6 +73,7 @@
+ #include "SensorRecord.h"
+ #include "SensorRegistrationInfo.h"
+ #include "SensorServiceUtils.h"
++#include "V2fLabSensor.h"
+@@ -371,6 +373,15 @@ void SensorService::onFirstRef() {
+             }
+         }
+
++        // V2-F BCT-1: expose lab-only step sensors on development builds.
++        // They are not backed by a physical HAL. Events are supplied only
++        // through Android's HAL_BYPASS_REPLAY_DATA_INJECTION test path.
++        if (android::base::GetBoolProperty("ro.debuggable", false)) {
++            registerSensor(std::make_shared<V2fLabSensor>(
++                    V2fLabSensor::makeStepDetector()), false, false);
++            registerSensor(std::make_shared<V2fLabSensor>(
++                    V2fLabSensor::makeStepCounter()), false, false);
++        }
++
+         // it's safe to instantiate the SensorFusion object here
+
+diff --git a/services/sensorservice/V2fLabSensor.h b/services/sensorservice/V2fLabSensor.h
+new file mode 100644
+index 0000000..3333333
+--- /dev/null
++++ b/services/sensorservice/V2fLabSensor.h
+@@ -0,0 +1,31 @@
++#pragma once
++
++#include "SensorInterface.h"
++
++namespace android {
++
++class V2fLabSensor final : public BaseSensor {
++public:
++    explicit V2fLabSensor(const sensor_t& sensor) : BaseSensor(sensor) {}
++
++    static sensor_t makeStepDetector();
++    static sensor_t makeStepCounter();
++
++    bool process(sensors_event_t* /*outEvent*/,
++                 const sensors_event_t& /*event*/) override {
++        return false;
++    }
++    status_t activate(void* /*ident*/, bool /*enabled*/) override { return NO_ERROR; }
++    status_t setDelay(void* /*ident*/, int /*handle*/, int64_t /*ns*/) override {
++        return NO_ERROR;
++    }
++    bool isVirtual() const override { return false; }
++};
++
++}  // namespace android
++
+diff --git a/services/sensorservice/V2fLabSensor.cpp b/services/sensorservice/V2fLabSensor.cpp
+new file mode 100644
+index 0000000..4444444
+--- /dev/null
++++ b/services/sensorservice/V2fLabSensor.cpp
+@@ -0,0 +1,57 @@
++#include "V2fLabSensor.h"
++
++#include <hardware/sensors.h>
++
++namespace android {
++namespace {
++
++constexpr int kDetectorHandle = 0x7f001218;
++constexpr int kCounterHandle = 0x7f001219;
++
++sensor_t makeSensor(const char* name, int handle, int type,
++                    const char* stringType, uint32_t flags) {
++    sensor_t sensor = {};
++    sensor.name = name;
++    sensor.vendor = "V2F Lab";
++    sensor.version = 1;
++    sensor.handle = handle;
++    sensor.type = type;
++    sensor.maxRange = 1000000.0f;
++    sensor.resolution = 1.0f;
++    sensor.power = 0.0f;
++    sensor.minDelay = 0;
++    sensor.fifoReservedEventCount = 0;
++    sensor.fifoMaxEventCount = 0;
++    sensor.stringType = stringType;
++    sensor.requiredPermission = SENSOR_PERMISSION_ACTIVITY_RECOGNITION;
++    sensor.maxDelay = 0;
++    sensor.flags = flags;
++    return sensor;
++}
++
++}  // namespace
++
++sensor_t V2fLabSensor::makeStepDetector() {
++    return makeSensor(
++            "V2F Virtual Step Detector",
++            kDetectorHandle,
++            SENSOR_TYPE_STEP_DETECTOR,
++            SENSOR_STRING_TYPE_STEP_DETECTOR,
++            SENSOR_FLAG_SPECIAL_REPORTING_MODE);
++}
++
++sensor_t V2fLabSensor::makeStepCounter() {
++    return makeSensor(
++            "V2F Virtual Step Counter",
++            kCounterHandle,
++            SENSOR_TYPE_STEP_COUNTER,
++            SENSOR_STRING_TYPE_STEP_COUNTER,
++            SENSOR_FLAG_ON_CHANGE_MODE);
++}
++
++}  // namespace android
+--
+2.43.0

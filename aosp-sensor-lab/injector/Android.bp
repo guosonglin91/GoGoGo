@@ -1,0 +1,8 @@
+android_app {
+    name: "V2fSensorInjector",
+    srcs: ["src/**/*.java"],
+    manifest: "AndroidManifest.xml",
+    platform_apis: true,
+    privileged: true,
+    certificate: "platform",
+}

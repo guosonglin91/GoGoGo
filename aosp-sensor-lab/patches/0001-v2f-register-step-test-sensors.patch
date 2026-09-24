@@ -12,8 +12,10 @@ diff --git a/services/sensorservice/Android.bp b/services/sensorservice/Android.
 index 8c80dd8..1111111 100644
 --- a/services/sensorservice/Android.bp
 +++ b/services/sensorservice/Android.bp
-@@ -38,6 +38,7 @@ cc_library {
-         "SensorRegistrationInfo.cpp",
+@@ -47,8 +47,9 @@ cc_library {
+         "SensorInterface.cpp",
+         "SensorList.cpp",
+         "SensorRecord.cpp",
          "SensorService.cpp",
          "SensorServiceUtils.cpp",
 +        "V2fLabSensor.cpp",

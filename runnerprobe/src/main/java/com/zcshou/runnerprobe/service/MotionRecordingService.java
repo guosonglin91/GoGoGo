@@ -374,16 +374,22 @@ public class MotionRecordingService extends Service
                     )
                     .bootMarker(readBootMarker())
                     .permissionState(permissionSummary())
-                    .detector(
+                    .detectorIdentity(
                             sensorName(detectorSensor),
                             sensorVendor(detectorSensor),
+                            sensorId(detectorSensor),
+                            sensorType(detectorSensor),
+                            sensorStringType(detectorSensor),
                             sensorVersion(detectorSensor),
                             sensorWakeUp(detectorSensor),
                             sensorReportingMode(detectorSensor)
                     )
-                    .counter(
+                    .counterIdentity(
                             sensorName(counterSensor),
                             sensorVendor(counterSensor),
+                            sensorId(counterSensor),
+                            sensorType(counterSensor),
+                            sensorStringType(counterSensor),
                             sensorVersion(counterSensor),
                             sensorWakeUp(counterSensor),
                             sensorReportingMode(counterSensor)
@@ -838,6 +844,18 @@ public class MotionRecordingService extends Service
 
     private static int sensorVersion(Sensor sensor) {
         return sensor == null ? -1 : sensor.getVersion();
+    }
+
+    private static int sensorId(Sensor sensor) {
+        return sensor == null ? -1 : sensor.getId();
+    }
+
+    private static int sensorType(Sensor sensor) {
+        return sensor == null ? -1 : sensor.getType();
+    }
+
+    private static String sensorStringType(Sensor sensor) {
+        return sensor == null ? "" : sensor.getStringType();
     }
 
     private static boolean sensorWakeUp(Sensor sensor) {

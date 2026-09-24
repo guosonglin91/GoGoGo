@@ -144,6 +144,20 @@ class AnalyzeExportsTest(unittest.TestCase):
                 [SESSION_ID, "gps", 2_000_000_000, 2_002_000_000, 2, 34.0, 108.001, 4.0, 90.0, 5.0, "true"],
             ],
         )
+        official_start = 10_000_000_000
+        official_end = 70_000_000_000
+        detector_rows = []
+        for i in range(100):
+            sensor_ts = official_start + (i + 1) * 500_000_000
+            detector_rows.append(
+                [
+                    SESSION_ID,
+                    sensor_ts,
+                    sensor_ts + 10_000_000,
+                    1.0,
+                ]
+            )
+
         _write_csv(
             consumer / "step_detector_events.csv",
             [
@@ -152,7 +166,7 @@ class AnalyzeExportsTest(unittest.TestCase):
                 "arrival_elapsed_ns",
                 "event_value",
             ],
-            [],
+            detector_rows,
         )
         _write_csv(
             consumer / "step_counter_events.csv",
@@ -164,7 +178,24 @@ class AnalyzeExportsTest(unittest.TestCase):
                 "session_delta",
                 "discontinuity",
             ],
-            [],
+            [
+                [
+                    SESSION_ID,
+                    official_start - 1,
+                    official_start,
+                    500,
+                    0,
+                    "false",
+                ],
+                [
+                    SESSION_ID,
+                    official_end,
+                    official_end + 10_000_000,
+                    600,
+                    100,
+                    "false",
+                ],
+            ],
         )
         for name in ("accel_summary.csv", "gyro_summary.csv"):
             _write_csv(
@@ -188,8 +219,8 @@ class AnalyzeExportsTest(unittest.TestCase):
                     "boot_marker": "boot-e2e",
                     "finalization_status": "SUCCESS",
                     "error_codes": [],
-                    "official_start_elapsed_ns": 10_000_000_000,
-                    "official_end_elapsed_ns": 70_000_000_000,
+                    "official_start_elapsed_ns": official_start,
+                    "official_end_elapsed_ns": official_end,
                     "detector_name": "fixture-detector",
                     "counter_name": "fixture-counter",
                 }
@@ -248,6 +279,34 @@ class AnalyzeExportsTest(unittest.TestCase):
             self.assertTrue((result / "gate_report.txt").is_file())
             self.assertTrue((result / "producer").is_dir())
             self.assertTrue((result / "consumer").is_dir())
+
+    def test_end_to_end_zip_analysis_with_ground_truth(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            producer_zip, consumer_zip = self.make_exports(root)
+            output = root / "analysis"
+
+            result = analyze_exports.analyze_exports(
+                producer_zip,
+                consumer_zip,
+                SESSION_ID,
+                output,
+                ground_truth_count=100,
+                ground_truth_method="manual",
+                ground_truth_notes="fixture",
+            )
+
+            summary = json.loads(
+                (result / "session_summary.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual("PASS", summary["gate_l"]["status"])
+            self.assertEqual("PASS", summary["gate_r"]["status"])
+            self.assertEqual("PASS", summary["gate_s"]["status"])
+            self.assertTrue(
+                (result / "external_ground_truth.json").is_file()
+            )
 
     def test_safe_extract_rejects_path_traversal(self):
         with tempfile.TemporaryDirectory() as temp:

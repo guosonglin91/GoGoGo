@@ -5,4 +5,5 @@
     <string name="arm_session">Arm Session</string>
     <string name="begin_official_recording">Begin Official Recording</string>
     <string name="stop_session">Stop &amp; Finalize Session</string>
+    <string name="share_session">Share Finalized Evidence ZIP</string>
 </resources>

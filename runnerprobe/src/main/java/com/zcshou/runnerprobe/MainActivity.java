@@ -3,8 +3,10 @@ package com.zcshou.runnerprobe;
 import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
@@ -14,6 +16,7 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.content.FileProvider;
 
 import com.zcshou.runnerprobe.domain.CadenceState;
 import com.zcshou.runnerprobe.evidence.EvidenceSchema;
@@ -23,7 +26,9 @@ import com.zcshou.runnerprobe.service.MotionRecordingService;
 import com.zcshou.runnerprobe.service.RecordingSnapshot;
 import com.zcshou.runnerprobe.service.RecordingSnapshotBus;
 import com.zcshou.runnerprobe.service.RecordingState;
+import com.zcshou.runnerprobe.session.SessionExporter;
 
+import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -40,6 +45,7 @@ public class MainActivity extends AppCompatActivity
     private Button armButton;
     private Button beginButton;
     private Button stopButton;
+    private Button shareButton;
 
     private String pendingSessionId;
     private RecordingSnapshot latestSnapshot =
@@ -55,12 +61,14 @@ public class MainActivity extends AppCompatActivity
         armButton = findViewById(R.id.button_arm);
         beginButton = findViewById(R.id.button_begin);
         stopButton = findViewById(R.id.button_stop);
+        shareButton = findViewById(R.id.button_share);
 
         sessionIdInput.setText(defaultSessionId());
 
         armButton.setOnClickListener(v -> requestPermissionsThenArm());
         beginButton.setOnClickListener(v -> beginOfficialRecording());
         stopButton.setOnClickListener(v -> stopSession());
+        shareButton.setOnClickListener(v -> shareSession());
 
         render(RecordingSnapshotBus.latest());
     }
@@ -180,6 +188,55 @@ public class MainActivity extends AppCompatActivity
         startService(intent);
     }
 
+    private void shareSession() {
+        RecordingSnapshot snapshot = RecordingSnapshotBus.latest();
+        if (snapshot.getState() != RecordingState.COMPLETE
+                || snapshot.getSessionId() == null
+                || snapshot.getSessionId().isEmpty()) {
+            Toast.makeText(
+                    this,
+                    "只有已完整 finalization 的 Session 才能导出。",
+                    Toast.LENGTH_LONG
+            ).show();
+            return;
+        }
+
+        File base = getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS);
+        if (base == null) {
+            base = getFilesDir();
+        }
+
+        File sessionDir = new File(
+                base,
+                "v2e/consumer/session_" + snapshot.getSessionId()
+        );
+        File exportDir = new File(base, "v2e/exports");
+
+        try {
+            File zip = SessionExporter.exportSession(
+                    sessionDir,
+                    exportDir,
+                    snapshot.getSessionId()
+            );
+            Uri uri = FileProvider.getUriForFile(
+                    this,
+                    BuildConfig.APPLICATION_ID + ".files",
+                    zip
+            );
+            Intent send = new Intent(Intent.ACTION_SEND);
+            send.setType("application/zip");
+            send.putExtra(Intent.EXTRA_STREAM, uri);
+            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(send, "Share RunnerProbe evidence"));
+        } catch (Exception e) {
+            Toast.makeText(
+                    this,
+                    "导出失败：" + e.getMessage(),
+                    Toast.LENGTH_LONG
+            ).show();
+        }
+    }
+
     private void sendLifecycleMarker(String action) {
         RecordingState state = RecordingSnapshotBus.latest().getState();
         if (!isSessionActive(state)) {
@@ -286,6 +343,7 @@ public class MainActivity extends AppCompatActivity
                         || state == RecordingState.READY
                         || state == RecordingState.RECORDING
         );
+        shareButton.setEnabled(state == RecordingState.COMPLETE);
         sessionIdInput.setEnabled(!isSessionActive(state));
     }
 

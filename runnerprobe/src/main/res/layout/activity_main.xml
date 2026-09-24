@@ -47,6 +47,13 @@
             android:enabled="false"
             android:text="@string/stop_session" />
 
+        <Button
+            android:id="@+id/button_share"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:enabled="false"
+            android:text="@string/share_session" />
+
         <TextView
             android:id="@+id/text_status"
             android:layout_width="match_parent"

@@ -52,6 +52,9 @@ jobs:
           PYTHONPATH: motion-analysis
         run: python -m unittest discover -s motion-analysis/tests -p 'test_*.py' -v
 
+      - name: Run V2-F BCT-1 Unit Tests
+        run: python -m unittest discover -s bct1/tests -p 'test_*.py' -v
+
       - name: Assemble GoGoGo Debug APK
         run: ./gradlew :app:assembleDebug
 
@@ -82,7 +85,6 @@ jobs:
           path: runnerprobe/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
-
       - name: Save V2-E Analysis Toolkit
         uses: actions/upload-artifact@v4
         with:
@@ -91,7 +93,6 @@ jobs:
             motion-analysis/**/*.py
             docs/v2e/*.md
           if-no-files-found: error
-
 
       - name: Prepare V2-E Acceptance Bundle
         run: |

@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-24  
 **Branch:** `route-playback-v1`  
-**Status:** Design frozen; awaiting user review  
+**Status:** Approved for implementation planning  
 **Depends on:** V2-E compatibility harness at `444426e`
 
 ## 1. Purpose

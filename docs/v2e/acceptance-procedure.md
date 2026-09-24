@@ -240,7 +240,34 @@ Expected:
 
 If a session is interrupted and has no final manifest, classify it as incomplete rather than PASS.
 
-## 7. Gate-S — synthetic model integrity
+## 7. Final integrated 60-second acceptance
+
+For the final V2-E acceptance record, use one paired session ID and exercise all three domains at the same time while keeping their data paths independent.
+
+Recommended sequence:
+
+1. Generate a fresh V2-E session ID.
+2. Enter that ID in RunnerProbe and tap **Arm Session**.
+3. Wait for `READY`. If the Step Counter is present but has not supplied a baseline yet, take a few ordinary preliminary steps before the official interval.
+4. Enter the same ID in GoGoGo Route Playback.
+5. Import the independent test route, but do not start external counting yet.
+6. Start GoGoGo route playback.
+7. Confirm RunnerProbe begins observing the synthetic Android location stream.
+8. Prepare manual/video external step counting.
+9. Tap RunnerProbe **Begin Official Recording** and start the external count on the same cue.
+10. Physically walk/run normally for at least 60 seconds while GoGoGo continues publishing the independent synthetic route.
+11. During this interval, exercise the required lifecycle sequence if this is the lifecycle acceptance run.
+12. Stop the external count and RunnerProbe official session on the same cue.
+13. Stop GoGoGo route playback.
+14. Export the GoGoGo producer ZIP.
+15. Export the RunnerProbe consumer ZIP.
+16. Run the full host-side analyzer with the external ground-truth count.
+
+This combined procedure does **not** turn synthetic cadence into Android sensor events. Gate-L observes the synthetic location path; Gate-R observes only real physical sensor events; Gate-S evaluates only the producer's internal deterministic motion model.
+
+The combined run is the preferred final acceptance session because it produces one matched evidence ID for Gate-L, Gate-R, and Gate-S.
+
+## 8. Gate-S — synthetic model integrity
 
 Gate-S is producer-internal test evidence. It is not an Android hardware sensor stream.
 
@@ -257,7 +284,7 @@ Analyzer checks include:
 - target cadence is consistent with the configured speed/cadence mapping;
 - producer recorder reports no model-integrity error.
 
-## 8. Host-side analysis from exported ZIPs
+## 9. Host-side analysis from exported ZIPs
 
 The repository provides:
 
@@ -305,7 +332,7 @@ Use `--ground-truth-method video` for a video-assisted count.
 
 The tool derives the official interval from finalized RunnerProbe metadata and writes the canonical merged report.
 
-## 9. Acceptance record
+## 10. Acceptance record
 
 For each physical-device session record:
 
@@ -326,7 +353,7 @@ For each physical-device session record:
 
 Do not commit personal raw route traces to the public repository unless intentionally sanitized.
 
-## 10. V2-E completion rule
+## 11. V2-E completion rule
 
 Physical V2-E acceptance requires all of the following:
 

@@ -23,6 +23,25 @@ class AnalyzerIntegrityHardeningTest(unittest.TestCase):
         result = evaluate_gate_l(producer, consumer)
         self.assertEqual(GateStatus.PASS, result.status)
 
+    def test_gate_l_does_not_treat_cross_provider_offset_as_motion(self):
+        producer = [
+            self.p("gps", 100, 101, 108.0),
+            self.p("network", 110, 111, 109.0),
+            self.p("gps", 200, 201, 108.0),
+            self.p("network", 210, 211, 109.0),
+        ]
+        consumer = [
+            self.c("gps", 100, 108.0),
+            self.c("network", 110, 109.0),
+            self.c("gps", 200, 108.0),
+            self.c("network", 210, 109.0),
+        ]
+
+        result = evaluate_gate_l(producer, consumer)
+        self.assertEqual(GateStatus.FAIL, result.status)
+        self.assertIn("PRODUCER_LOCATION_NO_MOTION", result.error_codes)
+        self.assertIn("LOCATION_NO_MOTION", result.error_codes)
+
     def test_gate_l_rejects_invalid_coordinates(self):
         producer = [
             self.p("gps", 100, 101, 108.0),

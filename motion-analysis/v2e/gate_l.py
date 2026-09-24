@@ -112,21 +112,33 @@ def evaluate_gate_l(
     if not producer_providers.issubset(allowed) or not consumer_providers.issubset(allowed):
         errors.append("LOCATION_PROVIDER_INVALID")
 
-    def path_distance(rows):
-        total = 0.0
-        for previous, current in zip(rows, rows[1:]):
-            total += _haversine(
-                float(previous["latitude"]),
-                float(previous["longitude"]),
-                float(current["latitude"]),
-                float(current["longitude"]),
-            )
-        return total
+    def path_distance_by_provider(rows):
+        grouped = {}
+        for row in rows:
+            grouped.setdefault(row["provider"], []).append(row)
 
-    producer_motion = path_distance(producer_rows)
-    consumer_motion = path_distance(consumer_rows)
+        distances = {}
+        for provider, provider_rows in grouped.items():
+            total = 0.0
+            for previous, current in zip(provider_rows, provider_rows[1:]):
+                total += _haversine(
+                    float(previous["latitude"]),
+                    float(previous["longitude"]),
+                    float(current["latitude"]),
+                    float(current["longitude"]),
+                )
+            distances[provider] = total
+        return distances
+
+    producer_motion_by_provider = path_distance_by_provider(producer_rows)
+    consumer_motion_by_provider = path_distance_by_provider(consumer_rows)
+    producer_motion = max(producer_motion_by_provider.values(), default=0.0)
+    consumer_motion = max(consumer_motion_by_provider.values(), default=0.0)
+
     metrics["producer_path_distance_m"] = producer_motion
     metrics["consumer_path_distance_m"] = consumer_motion
+    metrics["producer_path_distance_by_provider_m"] = producer_motion_by_provider
+    metrics["consumer_path_distance_by_provider_m"] = consumer_motion_by_provider
 
     if producer_motion <= 1e-3:
         errors.append("PRODUCER_LOCATION_NO_MOTION")

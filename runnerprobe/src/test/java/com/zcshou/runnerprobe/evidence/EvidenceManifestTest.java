@@ -117,7 +117,7 @@ public class EvidenceManifestTest {
                         new EvidenceFileEntry(
                                 "gyro_summary.csv",
                                 1L,
-                                "00".repeat(32)
+                                zeroHash()
                         )
                 )
         );
@@ -131,7 +131,7 @@ public class EvidenceManifestTest {
         EvidenceFileEntry entry = new EvidenceFileEntry(
                 "location_events.csv",
                 0L,
-                "00".repeat(32)
+                zeroHash()
         );
 
         assertCode("DUPLICATE_EVIDENCE_FILE",
@@ -142,6 +142,14 @@ public class EvidenceManifestTest {
                         true,
                         Arrays.asList(entry, entry)
                 ));
+    }
+
+    private static String zeroHash() {
+        StringBuilder out = new StringBuilder(64);
+        for (int i = 0; i < 64; i++) {
+            out.append('0');
+        }
+        return out.toString();
     }
 
     private static void assertCode(String expected, ThrowingRunnable action) {

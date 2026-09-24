@@ -14,7 +14,7 @@ public class SessionIdTest {
 
     @Test
     public void acceptsMaximumLength() throws Exception {
-        String value = "A".repeat(48);
+        String value = repeated('A', 48);
         assertEquals(value, SessionId.validate(value));
     }
 
@@ -28,7 +28,15 @@ public class SessionIdTest {
     @Test
     public void rejectsEmptyAndTooLong() {
         assertInvalid("");
-        assertInvalid("A".repeat(49));
+        assertInvalid(repeated('A', 49));
+    }
+
+    private static String repeated(char value, int count) {
+        StringBuilder out = new StringBuilder(count);
+        for (int i = 0; i < count; i++) {
+            out.append(value);
+        }
+        return out.toString();
     }
 
     private static void assertInvalid(String value) {

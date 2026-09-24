@@ -35,6 +35,15 @@
             android:text="循环" />
     </LinearLayout>
 
+    <EditText
+        android:id="@+id/route_evidence_session"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="V2-E Session ID"
+        android:inputType="text"
+        android:maxLength="48"
+        android:singleLine="true" />
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

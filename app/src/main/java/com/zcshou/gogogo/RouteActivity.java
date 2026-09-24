@@ -26,6 +26,7 @@ import com.baidu.mapapi.map.MarkerOptions;
 import com.baidu.mapapi.map.PolylineOptions;
 import com.baidu.mapapi.model.LatLng;
 import com.baidu.mapapi.utils.CoordinateConverter;
+import com.zcshou.motion.MotionSessionId;
 import com.zcshou.route.GpxParser;
 import com.zcshou.route.RoutePlan;
 import com.zcshou.route.RoutePoint;
@@ -36,7 +37,9 @@ import com.zcshou.route.RouteTestMath;
 import com.zcshou.service.ServiceGo;
 
 import java.io.InputStream;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
@@ -51,6 +54,7 @@ public class RouteActivity extends BaseActivity {
     private Marker movingMarker;
 
     private EditText speedInput;
+    private EditText evidenceSessionInput;
     private Switch loopSwitch;
     private TextView statusText;
     private Button pauseButton;
@@ -123,6 +127,7 @@ public class RouteActivity extends BaseActivity {
         baiduMap = mapView.getMap();
 
         speedInput = findViewById(R.id.route_speed);
+        evidenceSessionInput = findViewById(R.id.route_evidence_session);
         loopSwitch = findViewById(R.id.route_loop);
         statusText = findViewById(R.id.route_status);
         pauseButton = findViewById(R.id.route_pause);
@@ -134,6 +139,7 @@ public class RouteActivity extends BaseActivity {
         findViewById(R.id.route_monitor).setOnClickListener(v ->
                 startActivity(new Intent(RouteActivity.this, LocationMonitorActivity.class)));
 
+        evidenceSessionInput.setText(defaultEvidenceSessionId());
         statusText.setText("请先导入 GPX");
     }
 
@@ -381,6 +387,20 @@ public class RouteActivity extends BaseActivity {
             return;
         }
 
+        String evidenceSessionId;
+        try {
+            evidenceSessionId = MotionSessionId.validate(
+                    evidenceSessionInput.getText().toString().trim()
+            );
+        } catch (IllegalArgumentException e) {
+            Toast.makeText(
+                    this,
+                    "V2-E Session ID 无效",
+                    Toast.LENGTH_LONG
+            ).show();
+            return;
+        }
+
         playbackTargetSpeedMps = speedMps;
         playbackLoopEnabled = loopSwitch.isChecked();
 
@@ -413,7 +433,8 @@ public class RouteActivity extends BaseActivity {
                 importedWasClosedLoop,
                 loopSwitch.isChecked(),
                 speedMps,
-                100L
+                100L,
+                evidenceSessionId
         );
 
         RouteStartResult result = mServiceBinder.startRoute(plan);
@@ -424,8 +445,9 @@ public class RouteActivity extends BaseActivity {
 
             statusText.setText(String.format(
                     Locale.getDefault(),
-                    "Session %d: %.2f m/s, %d 点, loop=%s",
+                    "Session %d / %s: %.2f m/s, %d 点, loop=%s",
                     mCurrentSessionId,
+                    evidenceSessionId,
                     playbackTargetSpeedMps,
                     playbackSourceRouteWgs84.size(),
                     playbackLoopEnabled ? "on" : "off"
@@ -439,6 +461,13 @@ public class RouteActivity extends BaseActivity {
 
             statusText.setText("启动失败: " + result.getMessage());
         }
+    }
+
+    private static String defaultEvidenceSessionId() {
+        return new SimpleDateFormat(
+                "'v2e_'yyyyMMdd_HHmmss",
+                Locale.US
+        ).format(new Date());
     }
 
     private void togglePause() {

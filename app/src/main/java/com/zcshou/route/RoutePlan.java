@@ -1,5 +1,7 @@
 package com.zcshou.route;
 
+import com.zcshou.motion.MotionSessionId;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -12,13 +14,15 @@ public final class RoutePlan {
     private final double altitudeMeters;
     private final boolean altitudeResolved;
     private final long nominalUpdateIntervalMs;
+    private final String evidenceSessionId;
 
     private RoutePlan(
             List<RoutePoint> pointsWgs84,
             boolean expectedClosedLoop,
             boolean loop,
             double targetSpeedMps,
-            long nominalUpdateIntervalMs
+            long nominalUpdateIntervalMs,
+            String evidenceSessionId
     ) {
         this.pointsWgs84 = Collections.unmodifiableList(new ArrayList<>(pointsWgs84));
         this.expectedClosedLoop = expectedClosedLoop;
@@ -27,6 +31,7 @@ public final class RoutePlan {
         this.altitudeMeters = Double.NaN;
         this.altitudeResolved = false;
         this.nominalUpdateIntervalMs = nominalUpdateIntervalMs;
+        this.evidenceSessionId = evidenceSessionId;
     }
 
     private RoutePlan(
@@ -36,7 +41,8 @@ public final class RoutePlan {
             double targetSpeedMps,
             double altitudeMeters,
             boolean altitudeResolved,
-            long nominalUpdateIntervalMs
+            long nominalUpdateIntervalMs,
+            String evidenceSessionId
     ) {
         this.pointsWgs84 = Collections.unmodifiableList(new ArrayList<>(pointsWgs84));
         this.expectedClosedLoop = expectedClosedLoop;
@@ -45,6 +51,7 @@ public final class RoutePlan {
         this.altitudeMeters = altitudeMeters;
         this.altitudeResolved = altitudeResolved;
         this.nominalUpdateIntervalMs = nominalUpdateIntervalMs;
+        this.evidenceSessionId = evidenceSessionId;
     }
 
     public static RoutePlan request(
@@ -63,7 +70,46 @@ public final class RoutePlan {
         if (nominalUpdateIntervalMs < 50L) {
             throw new IllegalArgumentException("Update interval must be >= 50 ms");
         }
-        return new RoutePlan(pointsWgs84, expectedClosedLoop, loop, targetSpeedMps, nominalUpdateIntervalMs);
+        return request(
+                pointsWgs84,
+                expectedClosedLoop,
+                loop,
+                targetSpeedMps,
+                nominalUpdateIntervalMs,
+                null
+        );
+    }
+
+    public static RoutePlan request(
+            List<RoutePoint> pointsWgs84,
+            boolean expectedClosedLoop,
+            boolean loop,
+            double targetSpeedMps,
+            long nominalUpdateIntervalMs,
+            String evidenceSessionId
+    ) {
+        if (pointsWgs84 == null || pointsWgs84.size() < 2) {
+            throw new IllegalArgumentException("Route must have at least 2 points");
+        }
+        if (targetSpeedMps <= 0.0 || targetSpeedMps > 20.0) {
+            throw new IllegalArgumentException("Target speed must be > 0 and <= 20.0 m/s");
+        }
+        if (nominalUpdateIntervalMs < 50L) {
+            throw new IllegalArgumentException("Update interval must be >= 50 ms");
+        }
+
+        String validatedEvidenceSessionId = evidenceSessionId == null
+                ? null
+                : MotionSessionId.validate(evidenceSessionId);
+
+        return new RoutePlan(
+                pointsWgs84,
+                expectedClosedLoop,
+                loop,
+                targetSpeedMps,
+                nominalUpdateIntervalMs,
+                validatedEvidenceSessionId
+        );
     }
 
     public RoutePlan resolveAltitude(double altitudeMeters) {
@@ -77,7 +123,8 @@ public final class RoutePlan {
                 targetSpeedMps,
                 altitudeMeters,
                 true,
-                nominalUpdateIntervalMs
+                nominalUpdateIntervalMs,
+                evidenceSessionId
         );
     }
 
@@ -107,5 +154,9 @@ public final class RoutePlan {
 
     public long getNominalUpdateIntervalMs() {
         return nominalUpdateIntervalMs;
+    }
+
+    public String getEvidenceSessionId() {
+        return evidenceSessionId;
     }
 }

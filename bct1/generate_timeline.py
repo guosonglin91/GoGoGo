@@ -4,7 +4,10 @@ import csv
 import json
 from pathlib import Path
 
-from bct1.timeline import FORMAL_CADENCES, build_timeline, samples_in_window
+if __package__:
+    from .timeline import FORMAL_CADENCES, build_timeline, samples_in_window
+else:
+    from timeline import FORMAL_CADENCES, build_timeline, samples_in_window
 
 
 def main(argv=None):

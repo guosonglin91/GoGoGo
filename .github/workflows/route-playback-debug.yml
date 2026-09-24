@@ -94,6 +94,19 @@ jobs:
             docs/v2e/*.md
           if-no-files-found: error
 
+      - name: Save V2-F BCT-1 Toolkit
+        uses: actions/upload-artifact@v4
+        with:
+          name: v2f-bct1-toolkit
+          path: |
+            bct1/**/*.py
+            aosp-sensor-lab/**
+            docs/v2f/**
+            CONTEXT.md
+            docs/superpowers/specs/2026-09-24-v2-f-bct1-third-party-cadence-baseline-design.md
+            docs/superpowers/plans/2026-09-24-v2-f-bct1-third-party-cadence-baseline.md
+          if-no-files-found: error
+
       - name: Prepare V2-E Acceptance Bundle
         run: |
           set -euo pipefail

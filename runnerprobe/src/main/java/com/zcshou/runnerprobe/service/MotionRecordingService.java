@@ -23,6 +23,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.IBinder;
 import android.os.SystemClock;
+import android.provider.Settings;
 
 import androidx.core.content.ContextCompat;
 
@@ -778,13 +779,29 @@ public class MotionRecordingService extends Service
     }
 
     private String readBootMarker() {
+        try {
+            int bootCount = Settings.Global.getInt(
+                    getContentResolver(),
+                    Settings.Global.BOOT_COUNT,
+                    -1
+            );
+            if (bootCount >= 0) {
+                return Build.FINGERPRINT
+                        + ":boot_count="
+                        + bootCount;
+            }
+        } catch (Exception ignored) {
+        }
+
         try (BufferedReader reader = new BufferedReader(
                 new FileReader(
                         "/proc/sys/kernel/random/boot_id"
                 ))) {
             String line = reader.readLine();
             if (line != null && !line.trim().isEmpty()) {
-                return line.trim();
+                return Build.FINGERPRINT
+                        + ":boot_id="
+                        + line.trim();
             }
         } catch (Exception ignored) {
         }
@@ -792,7 +809,11 @@ public class MotionRecordingService extends Service
         long bootEpochApproxMs =
                 System.currentTimeMillis()
                         - SystemClock.elapsedRealtime();
-        return Build.FINGERPRINT + ":" + bootEpochApproxMs;
+        long bootEpochMinute =
+                Math.floorDiv(bootEpochApproxMs, 60_000L);
+        return Build.FINGERPRINT
+                + ":boot_epoch_minute="
+                + bootEpochMinute;
     }
 
     private static String sensorName(Sensor sensor) {

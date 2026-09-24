@@ -24,6 +24,7 @@ import android.os.IBinder;
 import android.os.Message;
 import android.os.Process;
 import android.os.SystemClock;
+import android.provider.Settings;
 
 import androidx.annotation.NonNull;
 import androidx.core.app.NotificationCompat;
@@ -514,19 +515,41 @@ public class ServiceGo extends Service {
     }
 
     private String readBootMarker() {
-        try (BufferedReader reader = new BufferedReader(
-                new FileReader("/proc/sys/kernel/random/boot_id"))) {
-            String line = reader.readLine();
-            if (line != null && !line.trim().isEmpty()) {
-                return line.trim();
+        try {
+            int bootCount = Settings.Global.getInt(
+                    getContentResolver(),
+                    Settings.Global.BOOT_COUNT,
+                    -1
+            );
+            if (bootCount >= 0) {
+                return Build.FINGERPRINT
+                        + ":boot_count="
+                        + bootCount;
             }
         } catch (Exception ignored) {
         }
 
-        long approximateBootEpochMs =
+        try (BufferedReader reader = new BufferedReader(
+                new FileReader(
+                        "/proc/sys/kernel/random/boot_id"
+                ))) {
+            String line = reader.readLine();
+            if (line != null && !line.trim().isEmpty()) {
+                return Build.FINGERPRINT
+                        + ":boot_id="
+                        + line.trim();
+            }
+        } catch (Exception ignored) {
+        }
+
+        long bootEpochApproxMs =
                 System.currentTimeMillis()
                         - SystemClock.elapsedRealtime();
-        return Build.FINGERPRINT + ":" + approximateBootEpochMs;
+        long bootEpochMinute =
+                Math.floorDiv(bootEpochApproxMs, 60_000L);
+        return Build.FINGERPRINT
+                + ":boot_epoch_minute="
+                + bootEpochMinute;
     }
 
     // ---- Original Provider Methods (adapted for canonical state) ----

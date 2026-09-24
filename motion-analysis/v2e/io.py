@@ -552,6 +552,12 @@ def load_evidence(producer_dir, consumer_dir, session_id: str) -> EvidenceBundle
             "Producer and consumer evidence are not from the same Android device profile",
         )
 
+    if producer_meta.get("source_commit_sha") != consumer_meta.get("source_commit_sha"):
+        raise EvidenceError(
+            "BUILD_SOURCE_MISMATCH",
+            "Producer and consumer evidence were built from different source commits",
+        )
+
     return EvidenceBundle(
         session_id=session_id,
         producer_dir=str(producer),

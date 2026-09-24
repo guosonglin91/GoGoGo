@@ -58,7 +58,13 @@ def write_manifest(root, role, names):
 
 
 class IoTest(unittest.TestCase):
-    def make_fixture(self, producer_boot="boot", consumer_boot="boot"):
+    def make_fixture(
+        self,
+        producer_boot="boot",
+        consumer_boot="boot",
+        producer_commit="fixture",
+        consumer_commit="fixture",
+    ):
         temp = tempfile.TemporaryDirectory()
         root = Path(temp.name)
         producer = root / "producer"
@@ -85,7 +91,7 @@ class IoTest(unittest.TestCase):
                     "start_elapsed_ns": 1,
                     "end_elapsed_ns": 100,
                     "app_version": "1.12.3",
-                    "source_commit_sha": "fixture",
+                    "source_commit_sha": producer_commit,
                     "device_model": "fixture-device",
                     "android_release": "fixture-release",
                     "api_level": 32,
@@ -110,7 +116,7 @@ class IoTest(unittest.TestCase):
                     "schema_version": "v2e-1",
                     "session_id": "v2e_io",
                     "app_version": "0.1.0",
-                    "source_commit_sha": "fixture",
+                    "source_commit_sha": consumer_commit,
                     "device_model": "fixture-device",
                     "android_release": "fixture-release",
                     "api_level": 32,
@@ -180,6 +186,16 @@ class IoTest(unittest.TestCase):
         with self.assertRaises(EvidenceError) as ctx:
             load_evidence(producer, consumer, "v2e_io")
         self.assertEqual("METADATA_FIELD_MISSING", ctx.exception.code)
+
+    def test_mismatched_source_commits_are_rejected(self):
+        temp, producer, consumer = self.make_fixture(
+            producer_commit="producer-sha",
+            consumer_commit="consumer-sha",
+        )
+        self.addCleanup(temp.cleanup)
+        with self.assertRaises(EvidenceError) as ctx:
+            load_evidence(producer, consumer, "v2e_io")
+        self.assertEqual("BUILD_SOURCE_MISMATCH", ctx.exception.code)
 
     def test_clock_domain_mismatch_is_rejected(self):
         temp, producer, consumer = self.make_fixture("boot-a", "boot-b")

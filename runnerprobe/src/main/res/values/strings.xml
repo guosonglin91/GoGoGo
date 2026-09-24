@@ -1,5 +1,8 @@
 <resources>
-    <string name="app_name">RunnerProbe</string>
+    <string name="app_name">RunnerProbe V2-E</string>
     <string name="bootstrap_status_placeholder">V2-E bootstrap</string>
-    <string name="bootstrap_status_format">Application: %1$s\nEvidence schema: %2$s\nState: bootstrap ready</string>
+    <string name="session_id_hint">V2-E Session ID</string>
+    <string name="arm_session">Arm Session</string>
+    <string name="begin_official_recording">Begin Official Recording</string>
+    <string name="stop_session">Stop &amp; Finalize Session</string>
 </resources>

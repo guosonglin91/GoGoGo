@@ -71,3 +71,13 @@ jobs:
           name: runnerprobe-v2e-debug-apk
           path: runnerprobe/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+
+      - name: Save V2-E Analysis Toolkit
+        uses: actions/upload-artifact@v4
+        with:
+          name: v2e-analysis-toolkit
+          path: |
+            motion-analysis/**/*.py
+            docs/v2e/*.md
+          if-no-files-found: error

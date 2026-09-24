@@ -144,12 +144,13 @@ git commit -m "feat: add deterministic synthetic motion model"
 **Files:**
 - Create: `app/src/main/java/com/zcshou/motion/MotionSessionId.java`
 - Create: `app/src/main/java/com/zcshou/motion/SyntheticMotionRecorder.java`
+- Create: `app/src/main/java/com/zcshou/motion/ProducerSessionMetadata.java`
 - Create: `app/src/test/java/com/zcshou/motion/MotionSessionIdTest.java`
 - Create: `app/src/test/java/com/zcshou/motion/SyntheticMotionRecorderTest.java`
 
 **Interfaces:**
 - Consumes: validated evidence session ID and `SyntheticStepEvent`.
-- Produces: finalized `synthetic_motion.csv` plus recorder status.
+- Produces: finalized `synthetic_motion.csv`, `producer_meta.json`, and recorder status.
 
 - [ ] **Step 1: Write failing ID and CSV tests**
 
@@ -168,6 +169,8 @@ Required CSV header:
 session_id,step_index,step_elapsed_ns,speed_mps,target_cadence_spm,instantaneous_cadence_spm,interval_ns
 ```
 
+`producer_meta.json` must record: `session_id`, route session id, model seed, movement threshold, cadence intercept/slope/min/max, jitter fraction, start/end elapsed time, recorder status, and error codes.
+
 - [ ] **Step 2: Run tests and verify failure**
 
 ```bash
@@ -182,9 +185,10 @@ Use a single-thread `ExecutorService`. Create exactly one producer directory per
 
 ```text
 v2e/producer/session_<id>/synthetic_motion.csv
+v2e/producer/session_<id>/producer_meta.json
 ```
 
-`close()` must wait up to 5 seconds for queued writes and return:
+`close(ProducerSessionMetadata metadata)` must serialize `producer_meta.json`, wait up to 5 seconds for queued writes, and return:
 
 ```text
 SUCCESS
@@ -260,7 +264,7 @@ Expected: FAIL because the overload/getter does not exist.
 
 - [ ] **Step 3: Add the RoutePlan field and preserve existing callers**
 
-Add a six-argument `request(..., String evidenceSessionId)`. Keep the existing five-argument method for current tests/callers by delegating to a generated safe value such as `route_<monotonic session-independent token>` only in legacy paths.
+Add a six-argument `request(List<RoutePoint> pointsWgs84, boolean expectedClosedLoop, boolean loop, double targetSpeedMps, long nominalUpdateIntervalMs, String evidenceSessionId)`. Keep the existing five-argument method for current tests/callers by delegating with `evidenceSessionId = null`. `ServiceGo` starts Gate-S recording only when `getEvidenceSessionId()` is non-null; the updated RouteActivity always supplies a validated V2-E session ID.
 
 Do not put cadence or synthetic-step data into RoutePlan.
 
@@ -379,6 +383,7 @@ The ZIP must contain:
 
 ```text
 session_<id>/synthetic_motion.csv
+session_<id>/producer_meta.json
 ```
 
 and must refuse export until the recorder is finalized.
@@ -448,7 +453,7 @@ Expected: no burst of accumulated steps immediately after resume.
 
 - [ ] **Step 4: Stop the route and export the producer ZIP**
 
-Verify `synthetic_motion.csv` timestamps and step indices are strictly monotonic.
+Verify `synthetic_motion.csv` timestamps and step indices are strictly monotonic and `producer_meta.json` contains the exact model seed/configuration used for the session.
 
 - [ ] **Step 5: Document the procedure and commit only the procedure**
 

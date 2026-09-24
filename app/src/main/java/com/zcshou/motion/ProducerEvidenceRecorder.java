@@ -52,13 +52,15 @@ public final class ProducerEvidenceRecorder {
         }
 
         sessionDir = new File(root, "session_" + sessionId);
-        if (!sessionDir.exists() && !sessionDir.mkdirs()) {
+        if (sessionDir.exists()) {
+            throw new IOException(
+                    "SESSION_ID_ALREADY_EXISTS: " + sessionId
+            );
+        }
+        if (!sessionDir.mkdirs()) {
             throw new IOException(
                     "Unable to create producer session directory"
             );
-        }
-        if (!sessionDir.isDirectory()) {
-            throw new IOException("Producer session path is not a directory");
         }
 
         locationWriter = openCsv(LOCATION_FILE, LOCATION_HEADER);

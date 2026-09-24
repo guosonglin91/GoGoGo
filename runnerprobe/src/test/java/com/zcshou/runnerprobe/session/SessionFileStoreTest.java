@@ -93,6 +93,15 @@ public class SessionFileStoreTest {
         assertFalse(store.appendStepDetector(10L, 11L, 1.0));
     }
 
+    @Test(expected = java.io.IOException.class)
+    public void refusesToReuseExistingSessionDirectory() throws Exception {
+        File root = temporaryFolder.newFolder("reuse");
+        File existing = new File(root, "session_v2e_store_reused");
+        assertTrue(existing.mkdirs());
+
+        new SessionFileStore(root, "v2e_store_reused");
+    }
+
     @Test
     public void manifestContainsSchemaSessionAndHashes() throws Exception {
         File root = temporaryFolder.newFolder("manifest");

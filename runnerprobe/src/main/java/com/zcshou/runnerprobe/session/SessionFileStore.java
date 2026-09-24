@@ -65,11 +65,13 @@ public final class SessionFileStore {
             throw new IOException("Root directory is null");
         }
         sessionDir = new File(rootDir, "session_" + sessionId);
-        if (!sessionDir.exists() && !sessionDir.mkdirs()) {
-            throw new IOException("Unable to create session directory: " + sessionDir);
+        if (sessionDir.exists()) {
+            throw new IOException(
+                    "SESSION_ID_ALREADY_EXISTS: " + sessionId
+            );
         }
-        if (!sessionDir.isDirectory()) {
-            throw new IOException("Session path is not a directory: " + sessionDir);
+        if (!sessionDir.mkdirs()) {
+            throw new IOException("Unable to create session directory: " + sessionDir);
         }
 
         locationWriter = openCsv(LOCATION_FILE, LOCATION_HEADER);

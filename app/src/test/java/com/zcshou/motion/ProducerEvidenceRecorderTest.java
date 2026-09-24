@@ -191,6 +191,20 @@ public class ProducerEvidenceRecorderTest {
         assertTrue(bDir.isDirectory());
     }
 
+    @Test(expected = java.io.IOException.class)
+    public void refusesToReuseExistingSessionDirectory()
+            throws Exception {
+        File root = temporaryFolder.newFolder("reuse");
+        File existing =
+                new File(root, "session_v2e_producer_reused");
+        assertTrue(existing.mkdirs());
+
+        new ProducerEvidenceRecorder(
+                root,
+                "v2e_producer_reused"
+        );
+    }
+
     @Test
     public void manifestContainsHashesAndProducerRole()
             throws Exception {

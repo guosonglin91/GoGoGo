@@ -47,6 +47,11 @@ jobs:
       - name: Run RunnerProbe Debug Unit Tests
         run: ./gradlew :runnerprobe:testDebugUnitTest
 
+      - name: Run V2-E Analyzer Unit Tests
+        env:
+          PYTHONPATH: motion-analysis
+        run: python -m unittest discover -s motion-analysis/tests -p 'test_*.py' -v
+
       - name: Assemble GoGoGo Debug APK
         run: ./gradlew :app:assembleDebug
 

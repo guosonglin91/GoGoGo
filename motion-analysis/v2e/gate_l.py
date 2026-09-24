@@ -66,22 +66,21 @@ def evaluate_gate_l(
     if not producer_providers.issubset(allowed) or not consumer_providers.issubset(allowed):
         errors.append("LOCATION_PROVIDER_INVALID")
 
-    def distance_across(rows):
-        if len(rows) < 2:
-            return 0.0
-        first = rows[0]
-        last = rows[-1]
-        return _haversine(
-            float(first["latitude"]),
-            float(first["longitude"]),
-            float(last["latitude"]),
-            float(last["longitude"]),
-        )
+    def path_distance(rows):
+        total = 0.0
+        for previous, current in zip(rows, rows[1:]):
+            total += _haversine(
+                float(previous["latitude"]),
+                float(previous["longitude"]),
+                float(current["latitude"]),
+                float(current["longitude"]),
+            )
+        return total
 
-    producer_motion = distance_across(producer_rows)
-    consumer_motion = distance_across(consumer_rows)
-    metrics["producer_endpoint_displacement_m"] = producer_motion
-    metrics["consumer_endpoint_displacement_m"] = consumer_motion
+    producer_motion = path_distance(producer_rows)
+    consumer_motion = path_distance(consumer_rows)
+    metrics["producer_path_distance_m"] = producer_motion
+    metrics["consumer_path_distance_m"] = consumer_motion
 
     if producer_motion <= 1e-3:
         errors.append("PRODUCER_LOCATION_NO_MOTION")

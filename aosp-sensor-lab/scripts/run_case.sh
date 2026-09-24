@@ -86,12 +86,16 @@ LOGCAT_PID="$!"
 
 adb_cmd shell dumpsys sensorservice   hal_bypass_replay_data_injection "$INJECTOR_PACKAGE"   > "$SESSION_DIR/injection_mode.txt"
 
-adb_cmd shell am startservice   -n "$INJECTOR_COMPONENT"   -a com.zcshou.v2finjector.action.BASELINE   --ei counter_baseline "$COUNTER_BASELINE"   > "$SESSION_DIR/baseline_command.txt"
-
 if [[ "$BCT1_AUTO_CONFIRM" != "1" ]]; then
   echo
-  echo "RunnerProbe should now have a Step Counter baseline."
   echo "1) Arm RunnerProbe with Session ID: $SESSION_ID"
+  read -r -p "Press Enter when RunnerProbe is ARMING and waiting for its counter baseline: " _
+fi
+
+adb_cmd shell am startservice -n "$INJECTOR_COMPONENT" -a com.zcshou.v2finjector.action.BASELINE --ei counter_baseline "$COUNTER_BASELINE" > "$SESSION_DIR/baseline_command.txt"
+
+if [[ "$BCT1_AUTO_CONFIRM" != "1" ]]; then
+  echo "Counter baseline sent."
   echo "2) Wait for READY, then tap Begin Official Recording"
   echo "3) Open the isolated AUT observation screen"
   read -r -p "Press Enter only when RunnerProbe is RECORDING and AUT is ready: " _

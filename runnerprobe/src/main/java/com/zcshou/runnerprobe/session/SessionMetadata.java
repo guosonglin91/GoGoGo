@@ -127,7 +127,7 @@ public final class SessionMetadata {
                     out.append("\\\\");
                     break;
                 case '"':
-                    out.append("\\"");
+                    out.append("\\\"");
                     break;
                 case '\n':
                     out.append("\\n");

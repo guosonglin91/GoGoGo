@@ -41,15 +41,28 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x gradlew
 
-      - name: Run Debug Unit Tests
-        run: ./gradlew testDebugUnitTest
+      - name: Run GoGoGo Debug Unit Tests
+        run: ./gradlew :app:testDebugUnitTest
 
-      - name: Assemble Debug APK
-        run: ./gradlew assembleDebug
+      - name: Run RunnerProbe Debug Unit Tests
+        run: ./gradlew :runnerprobe:testDebugUnitTest
 
-      - name: Save Debug APK
+      - name: Assemble GoGoGo Debug APK
+        run: ./gradlew :app:assembleDebug
+
+      - name: Assemble RunnerProbe Debug APK
+        run: ./gradlew :runnerprobe:assembleDebug
+
+      - name: Save GoGoGo Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: route-playback-v1-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Save RunnerProbe Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: runnerprobe-v2e-debug-apk
+          path: runnerprobe/build/outputs/apk/debug/*.apk
           if-no-files-found: error

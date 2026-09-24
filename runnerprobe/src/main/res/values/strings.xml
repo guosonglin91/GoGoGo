@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">RunnerProbe</string>
+    <string name="bootstrap_status_placeholder">V2-E bootstrap</string>
+    <string name="bootstrap_status_format">Application: %1$s\nEvidence schema: %2$s\nState: bootstrap ready</string>
+</resources>

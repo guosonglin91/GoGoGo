@@ -1,0 +1,5 @@
+<resources>
+    <style name="Theme.RunnerProbe" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+</resources>

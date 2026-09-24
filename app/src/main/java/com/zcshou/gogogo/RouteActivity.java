@@ -90,6 +90,14 @@ public class RouteActivity extends BaseActivity {
             mServiceBinder = (ServiceGo.ServiceGoBinder) service;
             mBound = true;
 
+            String restoredEvidenceId =
+                    mServiceBinder.getEvidenceSessionId();
+            if (restoredEvidenceId != null
+                    && !restoredEvidenceId.isEmpty()) {
+                mCurrentEvidenceSessionId = restoredEvidenceId;
+                evidenceSessionInput.setText(restoredEvidenceId);
+            }
+
             // Restore existing active session snapshot
             RouteSnapshot snap = mServiceBinder.getRouteSnapshot();
             if (snap != null && snap.getSessionId() > 0L) {

@@ -8,6 +8,21 @@ android {
     compileSdk = 32
     namespace = "com.zcshou.runnerprobe"
 
+    signingConfigs {
+        debug {
+            storeFile file('..\\keystore\\GoGoGo.jks')
+            storePassword 'GoGoGo'
+            keyAlias 'GoGoKey'
+            keyPassword 'GoGoGo'
+        }
+        release {
+            storeFile file('..\\keystore\\GoGoGo.jks')
+            storePassword 'GoGoGo'
+            keyAlias 'GoGoKey'
+            keyPassword 'GoGoGo'
+        }
+    }
+
     defaultConfig {
         applicationId "com.zcshou.runnerprobe"
         minSdkVersion 27
@@ -26,6 +41,10 @@ android {
     buildTypes {
         release {
             minifyEnabled = false
+            signingConfig = signingConfigs.release
+        }
+        debug {
+            signingConfig = signingConfigs.debug
         }
     }
 

@@ -58,6 +58,16 @@ jobs:
       - name: Assemble RunnerProbe Debug APK
         run: ./gradlew :runnerprobe:assembleDebug
 
+      - name: Verify Debug APK Signatures
+        run: |
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          APP_APK="$(find app/build/outputs/apk/debug -maxdepth 1 -name '*.apk' -print -quit)"
+          PROBE_APK="$(find runnerprobe/build/outputs/apk/debug -maxdepth 1 -name '*.apk' -print -quit)"
+          test -n "$APP_APK"
+          test -n "$PROBE_APK"
+          "$APKSIGNER" verify --verbose --print-certs "$APP_APK"
+          "$APKSIGNER" verify --verbose --print-certs "$PROBE_APK"
+
       - name: Save GoGoGo Debug APK
         uses: actions/upload-artifact@v4
         with:

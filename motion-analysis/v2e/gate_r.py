@@ -54,6 +54,8 @@ def evaluate_gate_r(
 
     if metadata.get("finalization_status") not in (None, "", "SUCCESS"):
         errors.append("CONSUMER_RECORDER_FAILURE")
+    if "SESSION_INTERRUPTED" in metadata.get("error_codes", []):
+        errors.append("SESSION_INTERRUPTED")
 
     detector_name = str(metadata.get("detector_name") or "")
     counter_name = str(metadata.get("counter_name") or "")
@@ -87,23 +89,23 @@ def evaluate_gate_r(
 
     discontinuity = any(
         str(row.get("discontinuity", "")).lower() in ("1", "true", "yes")
-        and start_ns <= int(float(row["sensor_timestamp_ns"])) <= end_ns
         for row in counter_rows
     )
     if discontinuity:
         errors.append("COUNTER_DISCONTINUITY")
 
-    sorted_counter = sorted(
-        counter_rows,
-        key=lambda r: int(float(r["sensor_timestamp_ns"])),
-    )
     previous_counter_ts = None
-    for row in sorted_counter:
+    for row in counter_rows:
         ts = int(float(row["sensor_timestamp_ns"]))
         if previous_counter_ts is not None and ts <= previous_counter_ts:
             errors.append("COUNTER_TIME_NON_MONOTONIC")
             break
         previous_counter_ts = ts
+
+    sorted_counter = sorted(
+        counter_rows,
+        key=lambda r: int(float(r["sensor_timestamp_ns"])),
+    )
 
     baseline = None
     end_value = None
@@ -145,6 +147,7 @@ def evaluate_gate_r(
             "COUNTER_BASELINE_UNAVAILABLE",
             "DETECTOR_COUNTER_DISAGREE",
             "CONSUMER_RECORDER_FAILURE",
+            "SESSION_INTERRUPTED",
         }
         if any(code in hard for code in errors):
             status = GateStatus.FAIL

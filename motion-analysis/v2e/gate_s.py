@@ -22,6 +22,15 @@ def evaluate_gate_s(
     if producer_meta.get("recorder_status") not in (None, "", "SUCCESS"):
         errors.append("PRODUCER_RECORDER_FAILURE")
 
+    reported_errors = [
+        str(code)
+        for code in producer_meta.get("error_codes", [])
+        if str(code)
+    ]
+    if reported_errors:
+        errors.append("PRODUCER_REPORTED_ERROR")
+        errors.extend(reported_errors)
+
     if not rows:
         errors.append("SYNTHETIC_TRACE_EMPTY")
         return GateResult(GateStatus.FAIL, metrics, errors)

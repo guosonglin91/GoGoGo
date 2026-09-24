@@ -66,13 +66,45 @@ def evaluate_gate_l(
         (producer_rows, "location_elapsed_ns", "PRODUCER_LOCATION_TIME_NON_MONOTONIC"),
         (consumer_rows, "location_elapsed_ns", "LOCATION_TIME_NON_MONOTONIC"),
     ):
-        previous = None
+        previous_by_provider = {}
         for row in rows:
+            provider = row["provider"]
             current = int(float(row[time_key]))
+            previous = previous_by_provider.get(provider)
             if previous is not None and current < previous:
                 errors.append(code)
                 break
-            previous = current
+            previous_by_provider[provider] = current
+
+    previous_publication = None
+    for row in producer_rows:
+        current = int(float(row["publication_elapsed_ns"]))
+        if previous_publication is not None and current < previous_publication:
+            errors.append("PRODUCER_PUBLICATION_TIME_NON_MONOTONIC")
+            break
+        previous_publication = current
+
+    def values_valid(row):
+        try:
+            lat = float(row["latitude"])
+            lon = float(row["longitude"])
+            if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
+                return False
+            for key in ("speed_mps", "bearing_deg", "accuracy_m"):
+                value = row.get(key)
+                if value in (None, ""):
+                    continue
+                number = float(value)
+                if not math.isfinite(number):
+                    return False
+                if key in ("speed_mps", "accuracy_m") and number < 0.0:
+                    return False
+            return True
+        except (KeyError, TypeError, ValueError):
+            return False
+
+    if not all(values_valid(row) for row in producer_rows + consumer_rows):
+        errors.append("LOCATION_VALUE_INVALID")
 
     allowed = {"gps", "network"}
     producer_providers = {r["provider"] for r in producer_rows}

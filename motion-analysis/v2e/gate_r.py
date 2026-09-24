@@ -52,6 +52,9 @@ def evaluate_gate_r(
     notes = []
     status = GateStatus.PASS
 
+    if metadata.get("finalization_status") not in (None, "", "SUCCESS"):
+        errors.append("CONSUMER_RECORDER_FAILURE")
+
     detector_name = str(metadata.get("detector_name") or "")
     counter_name = str(metadata.get("counter_name") or "")
     if not detector_name:
@@ -141,6 +144,7 @@ def evaluate_gate_r(
             "COUNTER_TIME_NON_MONOTONIC",
             "COUNTER_BASELINE_UNAVAILABLE",
             "DETECTOR_COUNTER_DISAGREE",
+            "CONSUMER_RECORDER_FAILURE",
         }
         if any(code in hard for code in errors):
             status = GateStatus.FAIL

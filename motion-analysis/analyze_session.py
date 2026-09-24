@@ -31,6 +31,8 @@ def main(argv=None) -> int:
         gate_l = evaluate_gate_l(
             bundle.producer_location,
             bundle.consumer_location,
+            bundle.producer_meta,
+            bundle.consumer_meta,
         )
         gate_s = evaluate_gate_s(
             bundle.synthetic_motion,

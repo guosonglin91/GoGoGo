@@ -33,8 +33,22 @@ def _finite_optional(value: str):
 def evaluate_gate_l(
     producer_rows: List[Dict[str, str]],
     consumer_rows: List[Dict[str, str]],
+    producer_meta: Dict = None,
+    consumer_meta: Dict = None,
 ) -> GateResult:
     errors = []
+    if producer_meta is not None and producer_meta.get("recorder_status") not in (
+        None,
+        "",
+        "SUCCESS",
+    ):
+        errors.append("PRODUCER_RECORDER_FAILURE")
+    if consumer_meta is not None and consumer_meta.get("finalization_status") not in (
+        None,
+        "",
+        "SUCCESS",
+    ):
+        errors.append("CONSUMER_RECORDER_FAILURE")
     notes = []
     metrics = {
         "producer_callback_count": len(producer_rows),

@@ -73,8 +73,25 @@ class IoTest(unittest.TestCase):
                 {
                     "schema_version": "v2e-1",
                     "session_id": "v2e_io",
+                    "route_session_id": 1,
+                    "model_seed": 7,
+                    "movement_threshold_mps": 0.5,
+                    "cadence_intercept_spm": 100.0,
+                    "cadence_slope_spm_per_mps": 15.0,
+                    "cadence_min_spm": 100.0,
+                    "cadence_max_spm": 190.0,
+                    "jitter_fraction": 0.02,
+                    "catch_up_cap": 64,
+                    "start_elapsed_ns": 1,
+                    "end_elapsed_ns": 100,
+                    "app_version": "1.12.3",
+                    "source_commit_sha": "fixture",
+                    "device_model": "fixture-device",
+                    "android_release": "fixture-release",
+                    "api_level": 32,
                     "boot_marker": producer_boot,
                     "recorder_status": "SUCCESS",
+                    "error_codes": [],
                 }
             ),
             encoding="utf-8",
@@ -92,7 +109,30 @@ class IoTest(unittest.TestCase):
                 {
                     "schema_version": "v2e-1",
                     "session_id": "v2e_io",
+                    "app_version": "0.1.0",
+                    "source_commit_sha": "fixture",
+                    "device_model": "fixture-device",
+                    "android_release": "fixture-release",
+                    "api_level": 32,
+                    "start_elapsed_ns": 1,
+                    "end_elapsed_ns": 100,
+                    "official_start_elapsed_ns": -1,
+                    "official_end_elapsed_ns": -1,
                     "boot_marker": consumer_boot,
+                    "finalization_status": "SUCCESS",
+                    "permission_state": "fixture",
+                    "detector_name": "",
+                    "detector_vendor": "",
+                    "detector_version": -1,
+                    "detector_wake_up": false,
+                    "detector_reporting_mode": -1,
+                    "counter_name": "",
+                    "counter_vendor": "",
+                    "counter_version": -1,
+                    "counter_wake_up": false,
+                    "counter_reporting_mode": -1,
+                    "lifecycle_events": [],
+                    "error_codes": [],
                 }
             ),
             encoding="utf-8",
@@ -122,6 +162,24 @@ class IoTest(unittest.TestCase):
             ctx.exception.code,
             ("EVIDENCE_SIZE_MISMATCH", "EVIDENCE_HASH_MISMATCH"),
         )
+
+    def test_missing_required_metadata_is_rejected(self):
+        temp, producer, consumer = self.make_fixture()
+        self.addCleanup(temp.cleanup)
+
+        meta_path = producer / "producer_meta.json"
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        del meta["boot_marker"]
+        meta_path.write_text(json.dumps(meta), encoding="utf-8")
+        write_manifest(
+            producer,
+            "producer",
+            list(PRODUCER_FILES) + ["producer_meta.json"],
+        )
+
+        with self.assertRaises(EvidenceError) as ctx:
+            load_evidence(producer, consumer, "v2e_io")
+        self.assertEqual("METADATA_FIELD_MISSING", ctx.exception.code)
 
     def test_clock_domain_mismatch_is_rejected(self):
         temp, producer, consumer = self.make_fixture("boot-a", "boot-b")

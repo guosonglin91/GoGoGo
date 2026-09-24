@@ -276,7 +276,84 @@ def read_csv(path: Path, session_id: str) -> List[Dict[str, str]]:
         raise EvidenceError("MALFORMED_CSV", f"Cannot parse {path.name}") from exc
 
 
-def _validate_metadata(meta: Dict, session_id: str, file_name: str) -> None:
+def _metadata_error(code: str, file_name: str, field: str, message: str):
+    raise EvidenceError(code, f"{file_name}.{field}: {message}")
+
+
+def _require_string(meta: Dict, key: str, file_name: str, allow_empty=False) -> str:
+    if key not in meta:
+        _metadata_error("METADATA_FIELD_MISSING", file_name, key, "missing")
+    value = meta.get(key)
+    if not isinstance(value, str) or (not allow_empty and not value):
+        _metadata_error("METADATA_VALUE_INVALID", file_name, key, "expected string")
+    return value
+
+
+def _require_int(
+    meta: Dict,
+    key: str,
+    file_name: str,
+    minimum=None,
+) -> int:
+    if key not in meta:
+        _metadata_error("METADATA_FIELD_MISSING", file_name, key, "missing")
+    value = meta.get(key)
+    if not isinstance(value, int) or isinstance(value, bool):
+        _metadata_error("METADATA_VALUE_INVALID", file_name, key, "expected integer")
+    if minimum is not None and value < minimum:
+        _metadata_error(
+            "METADATA_VALUE_INVALID",
+            file_name,
+            key,
+            f"must be >= {minimum}",
+        )
+    return value
+
+
+def _require_number(
+    meta: Dict,
+    key: str,
+    file_name: str,
+    minimum=None,
+) -> float:
+    if key not in meta:
+        _metadata_error("METADATA_FIELD_MISSING", file_name, key, "missing")
+    value = meta.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        _metadata_error("METADATA_VALUE_INVALID", file_name, key, "expected number")
+    value = float(value)
+    if not math.isfinite(value):
+        _metadata_error("METADATA_VALUE_INVALID", file_name, key, "must be finite")
+    if minimum is not None and value < minimum:
+        _metadata_error(
+            "METADATA_VALUE_INVALID",
+            file_name,
+            key,
+            f"must be >= {minimum}",
+        )
+    return value
+
+
+def _require_string_list(meta: Dict, key: str, file_name: str) -> List[str]:
+    if key not in meta:
+        _metadata_error("METADATA_FIELD_MISSING", file_name, key, "missing")
+    value = meta.get(key)
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        _metadata_error(
+            "METADATA_VALUE_INVALID",
+            file_name,
+            key,
+            "expected list of strings",
+        )
+    return value
+
+
+def _validate_metadata(
+    meta: Dict,
+    session_id: str,
+    file_name: str,
+    role: str,
+) -> None:
     if meta.get("schema_version") != SCHEMA_VERSION:
         raise EvidenceError(
             "UNSUPPORTED_SCHEMA_VERSION", f"Unsupported schema in {file_name}"
@@ -285,6 +362,148 @@ def _validate_metadata(meta: Dict, session_id: str, file_name: str) -> None:
         raise EvidenceError(
             "SESSION_ID_MISMATCH", f"Metadata session ID mismatch in {file_name}"
         )
+
+    for key in (
+        "app_version",
+        "source_commit_sha",
+        "device_model",
+        "android_release",
+        "boot_marker",
+    ):
+        _require_string(meta, key, file_name)
+
+    api_level = _require_int(meta, "api_level", file_name, minimum=1)
+    start_ns = _require_int(meta, "start_elapsed_ns", file_name, minimum=0)
+    end_ns = _require_int(meta, "end_elapsed_ns", file_name, minimum=0)
+    if end_ns < start_ns:
+        _metadata_error(
+            "METADATA_VALUE_INVALID",
+            file_name,
+            "end_elapsed_ns",
+            "must be >= start_elapsed_ns",
+        )
+    _require_string_list(meta, "error_codes", file_name)
+
+    if role == "producer":
+        _require_int(meta, "route_session_id", file_name, minimum=1)
+        _require_int(meta, "model_seed", file_name)
+        _require_string(meta, "recorder_status", file_name)
+
+        movement_threshold = _require_number(
+            meta,
+            "movement_threshold_mps",
+            file_name,
+            minimum=0.0,
+        )
+        min_cadence = _require_number(
+            meta,
+            "cadence_min_spm",
+            file_name,
+            minimum=0.0,
+        )
+        max_cadence = _require_number(
+            meta,
+            "cadence_max_spm",
+            file_name,
+            minimum=0.0,
+        )
+        _require_number(meta, "cadence_intercept_spm", file_name)
+        _require_number(meta, "cadence_slope_spm_per_mps", file_name)
+        jitter = _require_number(
+            meta,
+            "jitter_fraction",
+            file_name,
+            minimum=0.0,
+        )
+        _require_int(meta, "catch_up_cap", file_name, minimum=1)
+
+        if movement_threshold < 0.0:
+            _metadata_error(
+                "METADATA_VALUE_INVALID",
+                file_name,
+                "movement_threshold_mps",
+                "must be non-negative",
+            )
+        if min_cadence <= 0.0 or max_cadence < min_cadence:
+            _metadata_error(
+                "METADATA_VALUE_INVALID",
+                file_name,
+                "cadence_min_spm",
+                "invalid cadence bounds",
+            )
+        if jitter >= 1.0:
+            _metadata_error(
+                "METADATA_VALUE_INVALID",
+                file_name,
+                "jitter_fraction",
+                "must be < 1.0",
+            )
+    elif role == "consumer":
+        _require_string(meta, "finalization_status", file_name)
+        _require_string(meta, "permission_state", file_name)
+        _require_string_list(meta, "lifecycle_events", file_name)
+
+        official_start = _require_int(
+            meta,
+            "official_start_elapsed_ns",
+            file_name,
+            minimum=-1,
+        )
+        official_end = _require_int(
+            meta,
+            "official_end_elapsed_ns",
+            file_name,
+            minimum=-1,
+        )
+        if (official_start == -1) != (official_end == -1):
+            _metadata_error(
+                "METADATA_VALUE_INVALID",
+                file_name,
+                "official_start_elapsed_ns",
+                "official interval must be entirely unset or entirely set",
+            )
+        if official_start >= 0 and official_end <= official_start:
+            _metadata_error(
+                "METADATA_VALUE_INVALID",
+                file_name,
+                "official_end_elapsed_ns",
+                "must be > official_start_elapsed_ns",
+            )
+
+        for key in (
+            "detector_name",
+            "detector_vendor",
+            "counter_name",
+            "counter_vendor",
+        ):
+            _require_string(meta, key, file_name, allow_empty=True)
+
+        for key in (
+            "detector_version",
+            "detector_reporting_mode",
+            "counter_version",
+            "counter_reporting_mode",
+        ):
+            _require_int(meta, key, file_name, minimum=-1)
+
+        for key in ("detector_wake_up", "counter_wake_up"):
+            if key not in meta:
+                _metadata_error("METADATA_FIELD_MISSING", file_name, key, "missing")
+            if not isinstance(meta.get(key), bool):
+                _metadata_error(
+                    "METADATA_VALUE_INVALID",
+                    file_name,
+                    key,
+                    "expected boolean",
+                )
+    else:
+        raise EvidenceError(
+            "INVALID_METADATA_ROLE",
+            f"Unknown metadata role: {role}",
+        )
+
+    # Keep api_level referenced so type/range validation is explicit above.
+    _ = api_level
 
 
 def load_evidence(producer_dir, consumer_dir, session_id: str) -> EvidenceBundle:
@@ -296,15 +515,41 @@ def load_evidence(producer_dir, consumer_dir, session_id: str) -> EvidenceBundle
 
     producer_meta = _read_json(producer / "producer_meta.json")
     consumer_meta = _read_json(consumer / "runnerprobe_meta.json")
-    _validate_metadata(producer_meta, session_id, "producer_meta.json")
-    _validate_metadata(consumer_meta, session_id, "runnerprobe_meta.json")
+    _validate_metadata(
+        producer_meta,
+        session_id,
+        "producer_meta.json",
+        "producer",
+    )
+    _validate_metadata(
+        consumer_meta,
+        session_id,
+        "runnerprobe_meta.json",
+        "consumer",
+    )
 
     producer_boot = str(producer_meta.get("boot_marker") or "")
     consumer_boot = str(consumer_meta.get("boot_marker") or "")
-    if producer_boot and consumer_boot and producer_boot != consumer_boot:
+    if producer_boot != consumer_boot:
         raise EvidenceError(
             "CLOCK_DOMAIN_MISMATCH",
             "Producer and consumer evidence are from different device boots",
+        )
+
+    producer_device = (
+        producer_meta.get("device_model"),
+        producer_meta.get("android_release"),
+        producer_meta.get("api_level"),
+    )
+    consumer_device = (
+        consumer_meta.get("device_model"),
+        consumer_meta.get("android_release"),
+        consumer_meta.get("api_level"),
+    )
+    if producer_device != consumer_device:
+        raise EvidenceError(
+            "DEVICE_METADATA_MISMATCH",
+            "Producer and consumer evidence are not from the same Android device profile",
         )
 
     return EvidenceBundle(

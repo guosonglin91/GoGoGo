@@ -20,8 +20,10 @@ if [[ -z "$PATCH_SOURCE" || -z "$INJECTOR_SOURCE" ]]; then
   exit 2
 fi
 
-git -C frameworks/native apply --check "$PATCH_SOURCE"
-git -C frameworks/native apply "$PATCH_SOURCE"
+pushd frameworks/native >/dev/null
+git apply --check "$PATCH_SOURCE"
+git apply "$PATCH_SOURCE"
+popd >/dev/null
 
 rm -rf packages/apps/V2fSensorInjector
 mkdir -p packages/apps/V2fSensorInjector

@@ -46,6 +46,7 @@ def evaluate_gate_s(
     max_jitter = 0.0
     max_cadence_error = 0.0
     max_mapping_error = 0.0
+    max_mapping_relative_error = 0.0
 
     for row in rows:
         index = _i(row, "step_index")
@@ -57,8 +58,11 @@ def evaluate_gate_s(
 
         if previous_index is not None and index != previous_index + 1:
             errors.append("STEP_INDEX_NON_MONOTONIC")
-        if previous_time is not None and time_ns <= previous_time:
-            errors.append("STEP_TIME_NON_MONOTONIC")
+        if previous_time is not None:
+            if time_ns <= previous_time:
+                errors.append("STEP_TIME_NON_MONOTONIC")
+            elif interval_ns > 0 and time_ns - previous_time != interval_ns:
+                errors.append("STEP_TIME_INTERVAL_MISMATCH")
         if interval_ns <= 0:
             errors.append("INVALID_STEP_INTERVAL")
         else:
@@ -79,8 +83,13 @@ def evaluate_gate_s(
 
         expected_target = min(max(intercept + slope * speed, min_cadence), max_cadence)
         mapping_error = abs(target - expected_target)
+        mapping_relative_error = mapping_error / max(1.0, abs(expected_target))
         max_mapping_error = max(max_mapping_error, mapping_error)
-        if mapping_error > 1e-9:
+        max_mapping_relative_error = max(
+            max_mapping_relative_error,
+            mapping_relative_error,
+        )
+        if mapping_relative_error > 1e-6:
             errors.append("SPEED_CADENCE_MISMATCH")
 
         previous_index = index
@@ -95,6 +104,7 @@ def evaluate_gate_s(
             "max_relative_jitter": max_jitter,
             "configured_jitter_bound": jitter_bound,
             "max_target_mapping_error_spm": max_mapping_error,
+            "max_relative_target_mapping_error": max_mapping_relative_error,
         }
     )
 

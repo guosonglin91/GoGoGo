@@ -44,6 +44,29 @@ class GateSTest(unittest.TestCase):
         self.assertEqual(GateStatus.FAIL, result.status)
         self.assertIn("STEP_INDEX_NON_MONOTONIC", result.error_codes)
 
+    def test_timestamp_delta_must_match_recorded_interval(self):
+        rows = [
+            self.row(1, 375_000_000),
+            self.row(2, 760_000_000),
+        ]
+        result = evaluate_gate_s(rows, self.meta)
+        self.assertEqual(GateStatus.FAIL, result.status)
+        self.assertIn(
+            "STEP_TIME_INTERVAL_MISMATCH",
+            result.error_codes,
+        )
+
+    def test_small_csv_rounding_error_in_speed_mapping_passes(self):
+        row = self.row(1, 315_789_474)
+        row["speed_mps"] = "5.99999999999"
+        row["target_cadence_spm"] = "189.999999999"
+        row["interval_ns"] = "315789474"
+        row["instantaneous_cadence_spm"] = str(
+            60_000_000_000.0 / 315_789_474
+        )
+        result = evaluate_gate_s([row], self.meta)
+        self.assertEqual(GateStatus.PASS, result.status)
+
     def test_excess_jitter_fails(self):
         row = self.row(1, 400_000_000)
         row["interval_ns"] = "400000000"

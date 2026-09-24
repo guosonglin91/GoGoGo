@@ -90,6 +90,7 @@ public class ServiceGo extends Service {
             new SyntheticMotionCoordinator();
     private long mProducerStartElapsedNs = -1L;
     private HumanMotionConfig mProducerMotionConfig;
+    private volatile String mLastEvidenceSessionId = "";
 
     private volatile boolean mGpsProviderReady = false;
     private volatile boolean mNetworkProviderReady = false;
@@ -322,6 +323,7 @@ public class ServiceGo extends Service {
                             producerRoot,
                             mProducerMotionConfig
                     );
+                    mLastEvidenceSessionId = evidenceSessionId;
                     mProducerStartElapsedNs =
                             SystemClock.elapsedRealtimeNanos();
                 } catch (Exception e) {
@@ -821,10 +823,12 @@ public class ServiceGo extends Service {
 
         public String getEvidenceSessionId() {
             SyntheticMotionStatus status = mMotionCoordinator.snapshot();
-            if (!status.isActive()) {
-                return "";
+            if (status.isActive()
+                    && status.getEvidenceSessionId() != null
+                    && !status.getEvidenceSessionId().isEmpty()) {
+                return status.getEvidenceSessionId();
             }
-            return status.getEvidenceSessionId();
+            return mLastEvidenceSessionId;
         }
     }
 }

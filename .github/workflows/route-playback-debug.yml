@@ -91,3 +91,67 @@ jobs:
             motion-analysis/**/*.py
             docs/v2e/*.md
           if-no-files-found: error
+
+
+      - name: Prepare V2-E Acceptance Bundle
+        run: |
+          set -euo pipefail
+          ROOT="v2e-acceptance-bundle"
+          mkdir -p "$ROOT/apks" "$ROOT/toolkit" "$ROOT/docs"
+
+          APP_APK="$(find app/build/outputs/apk/debug -maxdepth 1 -name '*.apk' -print -quit)"
+          PROBE_APK="$(find runnerprobe/build/outputs/apk/debug -maxdepth 1 -name '*.apk' -print -quit)"
+          test -n "$APP_APK"
+          test -n "$PROBE_APK"
+
+          cp "$APP_APK" "$ROOT/apks/GoGoGo-debug.apk"
+          cp "$PROBE_APK" "$ROOT/apks/RunnerProbe-debug.apk"
+          cp -R motion-analysis "$ROOT/toolkit/motion-analysis"
+          cp docs/v2e/acceptance-procedure.md "$ROOT/docs/"
+          cp docs/v2e/implementation-status.md "$ROOT/docs/"
+
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path("v2e-acceptance-bundle")
+          apk_dir = root / "apks"
+
+          files = []
+          for path in sorted(apk_dir.glob("*.apk")):
+              digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              files.append({
+                  "name": path.name,
+                  "bytes": path.stat().st_size,
+                  "sha256": digest,
+              })
+
+          provenance = {
+              "schema_version": "v2e-1",
+              "source_commit_sha": os.environ.get("GITHUB_SHA", ""),
+              "workflow_run_id": os.environ.get("GITHUB_RUN_ID", ""),
+              "workflow_run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
+              "repository": os.environ.get("GITHUB_REPOSITORY", ""),
+              "ref_name": os.environ.get("GITHUB_REF_NAME", ""),
+              "apks": files,
+              "physical_gate_acceptance": "PENDING",
+          }
+
+          (root / "BUILD_PROVENANCE.json").write_text(
+              json.dumps(provenance, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+
+          with (root / "SHA256SUMS.txt").open("w", encoding="utf-8") as handle:
+              for item in files:
+                  handle.write(f'{item["sha256"]}  apks/{item["name"]}\n')
+          PY
+
+      - name: Save V2-E Acceptance Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: v2e-acceptance-bundle
+          path: v2e-acceptance-bundle/**
+          if-no-files-found: error

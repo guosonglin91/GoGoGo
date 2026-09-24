@@ -42,17 +42,20 @@
 - Create: `motion-analysis/v2e/io.py`
 - Create: `motion-analysis/tests/test_io.py`
 - Create: `motion-analysis/tests/fixtures/minimal/producer/synthetic_motion.csv`
+- Create: `motion-analysis/tests/fixtures/minimal/producer/producer_meta.json`
 - Create: `motion-analysis/tests/fixtures/minimal/consumer/location_events.csv`
 - Create: `motion-analysis/tests/fixtures/minimal/consumer/step_detector_events.csv`
 - Create: `motion-analysis/tests/fixtures/minimal/consumer/step_counter_events.csv`
 - Create: `motion-analysis/tests/fixtures/minimal/consumer/accel_summary.csv`
 - Create: `motion-analysis/tests/fixtures/minimal/consumer/gyro_summary.csv`
+- Create: `motion-analysis/tests/fixtures/minimal/consumer/runnerprobe_meta.json`
 
 **Interfaces:**
 - Consumes: finalized producer and consumer directories.
 - Produces:
   - `GateStatus` enum values PASS/WARN/FAIL/NOT_RUN;
   - validated row objects/dicts;
+  - validated producer/RunnerProbe metadata dicts;
   - deterministic `EvidenceError(code, message)`.
 
 - [ ] **Step 1: Write failing CSV/session validation tests**
@@ -97,7 +100,7 @@ class EvidenceError(Exception):
         self.message = message
 ```
 
-CSV loaders must validate required headers, parse numeric fields explicitly, reject non-finite floats, and verify each row's `session_id` equals the CLI-provided canonical session ID.
+CSV loaders must validate required headers, parse numeric fields explicitly, reject non-finite floats, and verify each row's `session_id` equals the CLI-provided canonical session ID. JSON metadata loaders must require `producer_meta.json` and `runnerprobe_meta.json`, validate their `session_id`, and extract device/sensor metadata, lifecycle events, session start/end elapsed time, producer model configuration, and recorded error codes.
 
 - [ ] **Step 4: Add malformed-input tests**
 
@@ -108,7 +111,9 @@ Pin these cases:
 - non-numeric timestamp;
 - NaN/Infinity in speed/cadence;
 - session-id mismatch;
-- missing required file.
+- missing required file;
+- malformed metadata JSON;
+- metadata session-id mismatch.
 
 Each case must return a named `EvidenceError`.
 
@@ -200,8 +205,14 @@ Rules:
 - [ ] **Step 5: Add missing/zero ground-truth tests**
 
 ```python
+metadata = {
+    "duration_seconds": 60.0,
+    "detector_present": True,
+    "counter_present": True,
+    "error_codes": []
+}
 with self.assertRaises(EvidenceError):
-    evaluate_gate_r(..., ground_truth_steps=0, ...)
+    evaluate_gate_r([], [], metadata, ground_truth_steps=0)
 ```
 
 No division by zero is permitted.
@@ -379,7 +390,7 @@ git commit -m "feat: evaluate Gate-L location evidence"
 - Consumes: producer directory, consumer directory, canonical session ID, optional Gate-R ground-truth steps, session duration/lifecycle metadata.
 - Produces:
   - canonical `session_<id>/`;
-  - copied raw files;
+  - copied raw files and source metadata (`producer_meta.json`, `runnerprobe_meta.json`);
   - `session_summary.json`;
   - `gate_report.txt`.
 
@@ -393,7 +404,6 @@ python motion-analysis/analyze_session.py \
   --producer motion-analysis/tests/fixtures/full/producer \
   --consumer motion-analysis/tests/fixtures/full/consumer \
   --ground-truth-steps 120 \
-  --duration-seconds 60 \
   --output build/v2e
 ```
 
@@ -560,19 +570,33 @@ Confirm session finalization still succeeds. Delivery batching may become WARN; 
 
 Run GoGoGo route playback long enough to produce a useful synthetic trace, including one pause/resume cycle, then stop and export.
 
-- [ ] **Step 7: Analyze the exported directories**
+- [ ] **Step 7: Stage exports at deterministic paths and analyze them**
+
+After unzipping the two exported bundles, place them at:
+
+```text
+build/v2e-input/v2e_20260924_001/producer/session_v2e_20260924_001/
+build/v2e-input/v2e_20260924_001/consumer/session_v2e_20260924_001/
+```
+
+Write the manually/video-counted integer as the only line of:
+
+```text
+build/v2e-input/v2e_20260924_001/ground_truth_steps.txt
+```
+
+Then run this exact command:
 
 ```bash
 python motion-analysis/analyze_session.py \
   --session-id v2e_20260924_001 \
-  --producer <producer-session-dir> \
-  --consumer <runnerprobe-session-dir> \
-  --ground-truth-steps <manual-or-video-count> \
-  --duration-seconds 60 \
+  --producer build/v2e-input/v2e_20260924_001/producer/session_v2e_20260924_001 \
+  --consumer build/v2e-input/v2e_20260924_001/consumer/session_v2e_20260924_001 \
+  --ground-truth-steps "$(cat build/v2e-input/v2e_20260924_001/ground_truth_steps.txt)" \
   --output build/v2e
 ```
 
-The angle-bracket values here are operator inputs from the just-completed test, not code placeholders: replace them with the actual exported directory paths and counted integer before execution.
+The analyzer derives duration, lifecycle events, device/sensor metadata, and producer model configuration from the two metadata JSON files; they are not supplied as command-line overrides.
 
 - [ ] **Step 8: Inspect the canonical results**
 
@@ -586,6 +610,8 @@ build/v2e/session_v2e_20260924_001/
 ├── accel_summary.csv
 ├── gyro_summary.csv
 ├── synthetic_motion.csv
+├── producer_meta.json
+├── runnerprobe_meta.json
 ├── session_summary.json
 └── gate_report.txt
 ```

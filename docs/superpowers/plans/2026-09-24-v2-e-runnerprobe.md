@@ -329,6 +329,7 @@ git commit -m "feat: add real cadence and step counter trackers"
 - Create: `runnerprobe/src/main/java/com/zcshou/runnerprobe/session/SessionId.java`
 - Create: `runnerprobe/src/main/java/com/zcshou/runnerprobe/session/SessionFileStore.java`
 - Create: `runnerprobe/src/main/java/com/zcshou/runnerprobe/session/SensorSummaryAccumulator.java`
+- Create: `runnerprobe/src/main/java/com/zcshou/runnerprobe/session/SessionMetadata.java`
 - Create: `runnerprobe/src/test/java/com/zcshou/runnerprobe/session/SessionIdTest.java`
 - Create: `runnerprobe/src/test/java/com/zcshou/runnerprobe/session/SessionFileStoreTest.java`
 - Create: `runnerprobe/src/test/java/com/zcshou/runnerprobe/session/SensorSummaryAccumulatorTest.java`
@@ -340,7 +341,8 @@ git commit -m "feat: add real cadence and step counter trackers"
   - `SessionFileStore(File rootDir, String sessionId)`
   - append methods for location, detector, counter, accel summary, gyro summary
   - `SessionFileStore.CloseResult close()`
-  - one-second magnitude summaries from `SensorSummaryAccumulator`.
+  - one-second magnitude summaries from `SensorSummaryAccumulator`;
+  - `void SessionFileStore.writeMetadata(SessionMetadata metadata)` producing `runnerprobe_meta.json`.
 
 - [ ] **Step 1: Write failing session-id and file-format tests**
 
@@ -374,6 +376,9 @@ session_id,sensor_timestamp_ns,arrival_elapsed_ns,absolute_count,session_delta,d
 
 accel_summary.csv / gyro_summary.csv:
 session_id,window_start_elapsed_ns,window_end_elapsed_ns,event_count,mean_magnitude,min_magnitude,max_magnitude
+
+runnerprobe_meta.json must contain:
+session_id, start_elapsed_ns, end_elapsed_ns, lifecycle_events, device_model, android_release, detector_name, detector_vendor, counter_name, counter_vendor, permission_state, error_codes
 ```
 
 - [ ] **Step 2: Run session tests and verify they fail**
@@ -386,7 +391,7 @@ Expected: FAIL because the session classes do not exist.
 
 - [ ] **Step 3: Implement SessionId, summaries, and asynchronous file writes**
 
-Use a single-thread `ExecutorService` inside `SessionFileStore` so Android sensor callbacks never perform blocking filesystem writes directly. Write headers when files are created. `close()` must submit a final flush/close operation, wait up to 5 seconds, and return a result with `success` and `errorCode`.
+Use a single-thread `ExecutorService` inside `SessionFileStore` so Android sensor callbacks never perform blocking filesystem writes directly. Write headers when files are created. `writeMetadata(SessionMetadata)` serializes `runnerprobe_meta.json` with a stable field order before close. `close()` must submit a final flush/close operation, wait up to 5 seconds, and return a result with `success` and `errorCode`.
 
 Use these error codes:
 
@@ -494,14 +499,18 @@ Required conditions:
 
 - [ ] **Step 5: Implement sensor and location callbacks**
 
-On Step Detector:
+On Step Detector, implement `handleStepDetector(SensorEvent event)` with this sequence:
 
 ```java
 long arrivalNs = SystemClock.elapsedRealtimeNanos();
 CadenceSnapshot cadence = cadenceTracker.onStep(event.timestamp);
 store.appendStepDetector(event.timestamp, arrivalNs, event.values[0]);
-publishSnapshot(...);
+detectorEventCount += 1L;
+lastDetectorArrivalNs = arrivalNs;
+publishCurrentSnapshot(cadence, arrivalNs);
 ```
+
+`publishCurrentSnapshot(CadenceSnapshot cadence, long nowNs)` must construct the immutable `RecordingSnapshot` from the service's current counters/provider/error/lifecycle fields and publish it through `RecordingSnapshotBus`.
 
 On Step Counter, round the framework float value only after validating it is finite and non-negative, then update `StepCounterTracker`.
 
@@ -525,9 +534,10 @@ Stopping must:
 1. unregister all LocationManager/SensorManager listeners;
 2. unregister the screen receiver;
 3. flush any pending accel/gyro one-second summaries;
-4. close `SessionFileStore`;
-5. preserve write/close errors in the final snapshot;
-6. stop foreground mode only after evidence finalization is attempted.
+4. build `SessionMetadata` from start/end elapsed time, lifecycle events, `Build.MODEL`, `Build.VERSION.RELEASE`, sensor names/vendors, permission state, and accumulated error codes, then call `store.writeMetadata(metadata)`;
+5. close `SessionFileStore`;
+6. preserve write/close errors in the final snapshot;
+7. stop foreground mode only after evidence finalization is attempted.
 
 - [ ] **Step 8: Run unit tests and assemble**
 
@@ -665,11 +675,11 @@ git commit -m "feat: add RunnerProbe session controls and diagnostics"
 
 **Interfaces:**
 - Consumes: one finalized session directory.
-- Produces: `runnerprobe_<sessionId>.zip` containing only finalized RunnerProbe evidence files.
+- Produces: `runnerprobe_<sessionId>.zip` containing only finalized RunnerProbe evidence files, including `runnerprobe_meta.json`.
 
 - [ ] **Step 1: Write the failing ZIP-content test**
 
-Create a temp session with the five raw files and assert the ZIP contains them under a single `session_<id>/` root and rejects export while the session is still open.
+Create a temp session with the five CSV files plus `runnerprobe_meta.json`; assert the ZIP contains them under a single `session_v2e_fixture_001/` root and rejects export while the session is still open.
 
 - [ ] **Step 2: Run the exporter test and verify it fails**
 
@@ -685,7 +695,7 @@ The exporter must:
 
 - require a closed/finalized session;
 - sort filenames before zipping for deterministic order;
-- include location, detector, counter, accel summary, and gyro summary files;
+- include location, detector, counter, accel summary, gyro summary, and `runnerprobe_meta.json`;
 - return an explicit error instead of creating a success ZIP if any required file is unreadable.
 
 - [ ] **Step 4: Add FileProvider share support**
@@ -839,6 +849,7 @@ step_detector_events.csv
 step_counter_events.csv
 accel_summary.csv
 gyro_summary.csv
+runnerprobe_meta.json
 ```
 
 - [ ] **Step 6: Document the device procedure and observed sensor metadata**

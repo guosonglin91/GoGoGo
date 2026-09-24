@@ -90,9 +90,9 @@ public final class SessionFileStore {
             long wallTimeMs,
             double latitude,
             double longitude,
-            double speedMps,
-            double bearingDeg,
-            double accuracyM,
+            Double speedMps,
+            Double bearingDeg,
+            Double accuracyM,
             boolean isMock
     ) {
         return submit(locationWriter, csv(
